@@ -30,39 +30,31 @@ export async function scrapeNitterAccount(handle: string): Promise<ScrapedTweet[
       const $ = cheerio.load(html);
       const tweets: ScrapedTweet[] = [];
 
-      // Get timestamp for 24 hours ago
-      const twentyFourHoursAgo = new Date();
-      twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
-
-      // Scrape tweets from the timeline
+      // Just grab the first 10 tweets - no date filtering
+      let count = 0;
       $('.timeline-item').each((_, element) => {
+        if (count >= 10) return false; // Stop after 10 tweets
+
         const $tweet = $(element);
 
         // Get tweet content
         const content = $tweet.find('.tweet-content').text().trim();
 
-        // Get timestamp - try multiple selectors
-        let timestamp = $tweet.find('.tweet-date a').attr('title') ||
-                       $tweet.find('.tweet-date').attr('title') ||
-                       '';
-
         // Skip if no content
         if (!content) return;
 
-        // If we have a timestamp, check if it's within 24 hours
-        if (timestamp) {
-          const tweetDate = new Date(timestamp);
-          if (tweetDate < twentyFourHoursAgo) {
-            return; // Skip old tweets
-          }
-        }
+        // Get timestamp if available
+        const timestamp = $tweet.find('.tweet-date a').attr('title') ||
+                         $tweet.find('.tweet-date').attr('title') ||
+                         'Recent';
 
-        // Include the tweet (either it's recent or we couldn't parse the date)
         tweets.push({
           content,
-          timestamp: timestamp || 'Unknown',
+          timestamp,
           handle,
         });
+
+        count++;
       });
 
       console.log(`Successfully scraped ${tweets.length} tweets from @${handle} via ${instance}`);
