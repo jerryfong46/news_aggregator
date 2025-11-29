@@ -78,49 +78,34 @@ export async function scrapeNitterAccount(handle: string): Promise<ScrapedTweet[
     }
   }
 
-  // If all instances failed, return mock data for testing
-  console.error(`Failed to scrape @${handle} from all Nitter instances - using mock data`);
-
-  // Return mock tweets for testing purposes
-  return [
-    {
-      content: `🚨 BREAKING: New vulnerability discovered in DeFi protocol. Users advised to withdraw funds immediately. More details coming soon. #CryptoSecurity #DeFi`,
-      timestamp: new Date().toISOString(),
-      handle,
-    },
-    {
-      content: `📢 $TOKEN airdrop announced! Snapshot taken at block 18500000. Eligible wallets will be able to claim starting next week. Requirements: Hold >0.1 ETH and interact with protocol. #Airdrop`,
-      timestamp: new Date(Date.now() - 3600000).toISOString(),
-      handle,
-    },
-    {
-      content: `Market update: BTC holding strong above $42k support. Bulls looking to push toward $45k resistance. Sentiment remains cautiously optimistic. #Bitcoin #Crypto`,
-      timestamp: new Date(Date.now() - 7200000).toISOString(),
-      handle,
-    },
-    {
-      content: `New L2 solution launching next month promises 10x lower gas fees. Partnership with major DEX confirmed. Could be game-changing for DeFi. #Layer2 #Ethereum`,
-      timestamp: new Date(Date.now() - 10800000).toISOString(),
-      handle,
-    },
-    {
-      content: `Reminder: Always verify smart contract addresses before interacting. Phishing attacks up 300% this month. Stay safe out there! #CryptoSafety`,
-      timestamp: new Date(Date.now() - 14400000).toISOString(),
-      handle,
-    },
-  ];
+  // If all instances failed, throw an error
+  const errorMsg = `Failed to scrape @${handle} from all Nitter instances. All instances are blocking or down.`;
+  console.error(errorMsg);
+  throw new Error(errorMsg);
 }
 
 export async function scrapeAllHandles(handles: string[]): Promise<ScrapedTweet[]> {
   const allTweets: ScrapedTweet[] = [];
+  const errors: string[] = [];
 
   // Scrape handles sequentially to avoid rate limiting
   for (const handle of handles) {
-    const tweets = await scrapeNitterAccount(handle);
-    allTweets.push(...tweets);
+    try {
+      const tweets = await scrapeNitterAccount(handle);
+      allTweets.push(...tweets);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      errors.push(`@${handle}: ${errorMsg}`);
+      console.error(`Failed to scrape @${handle}:`, errorMsg);
+    }
 
     // Small delay between requests
     await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+
+  // If all handles failed, throw an error
+  if (allTweets.length === 0 && errors.length > 0) {
+    throw new Error(`Failed to scrape any handles. Errors:\n${errors.join('\n')}`);
   }
 
   return allTweets;
