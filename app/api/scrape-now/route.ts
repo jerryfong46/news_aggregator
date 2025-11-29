@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getHandles, saveDailySummary } from '@/lib/kv';
-import { scrapeAllHandles } from '@/lib/scraper';
+import { scrapeAllHandlesWithBrowser } from '@/lib/scraper-puppeteer';
 import { generateSummary } from '@/lib/summarizer';
 
 export const maxDuration = 300; // 5 minutes max execution time
@@ -21,9 +21,9 @@ export async function POST(request: NextRequest) {
     const handles = handleData.map(h => h.handle);
     console.log(`Scraping ${handles.length} handles:`, handles);
 
-    // Scrape all handles
-    const tweets = await scrapeAllHandles(handles);
-    console.log(`Scraped ${tweets.length} tweets`);
+    // Scrape all handles using headless browser
+    const tweets = await scrapeAllHandlesWithBrowser(handles);
+    console.log(`Scraped ${tweets.length} tweets using headless browser`);
 
     if (tweets.length === 0) {
       return NextResponse.json({
