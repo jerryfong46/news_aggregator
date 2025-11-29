@@ -3,9 +3,10 @@ import { ScrapedTweet } from './kv';
 
 // List of Nitter instances to try (in order of preference)
 const NITTER_INSTANCES = [
-  'https://nitter.poast.org',
-  'https://nitter.privacydev.net',
   'https://nitter.net',
+  'https://nitter.privacydev.net',
+  'https://nitter.1d4.us',
+  'https://nitter.kavin.rocks',
 ];
 
 export async function scrapeNitterAccount(handle: string): Promise<ScrapedTweet[]> {
@@ -17,7 +18,13 @@ export async function scrapeNitterAccount(handle: string): Promise<ScrapedTweet[
 
       const response = await fetch(url, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'DNT': '1',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
         },
       });
 
@@ -57,7 +64,14 @@ export async function scrapeNitterAccount(handle: string): Promise<ScrapedTweet[
         count++;
       });
 
-      console.log(`Successfully scraped ${tweets.length} tweets from @${handle} via ${instance}`);
+      if (tweets.length === 0) {
+        console.log(`No tweets found from @${handle} via ${instance} - HTML might have different structure`);
+        // Log a sample of the HTML to debug
+        const sampleHTML = html.substring(0, 500);
+        console.log('Sample HTML:', sampleHTML);
+      } else {
+        console.log(`Successfully scraped ${tweets.length} tweets from @${handle} via ${instance}`);
+      }
       return tweets;
     } catch (error) {
       console.error(`Error scraping ${handle} from instance:`, error);
