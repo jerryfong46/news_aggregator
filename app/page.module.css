@@ -45,6 +45,48 @@
   color: #f1f5f9;
 }
 
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.cardHeader h2 {
+  margin-bottom: 0;
+}
+
+.scrapeButton {
+  padding: 0.5rem 1rem;
+  background: linear-gradient(to right, #10b981, #059669);
+  border: none;
+  border-radius: 0.5rem;
+  color: white;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.scrapeButton:hover {
+  opacity: 0.9;
+}
+
+.scrapeButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.success {
+  color: #34d399;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: rgba(16, 185, 129, 0.1);
+  border-radius: 0.5rem;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  font-size: 0.875rem;
+}
+
 .form {
   display: flex;
   gap: 0.5rem;

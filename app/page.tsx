@@ -31,6 +31,8 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [summaries, setSummaries] = useState<DailySummary[]>([]);
   const [error, setError] = useState('');
+  const [scraping, setScraping] = useState(false);
+  const [scrapeMessage, setScrapeMessage] = useState('');
 
   useEffect(() => {
     fetchHandles();
@@ -94,6 +96,35 @@ export default function Home() {
     }
   };
 
+  const triggerScrapeNow = async () => {
+    setScraping(true);
+    setScrapeMessage('');
+    setError('');
+
+    try {
+      const res = await fetch('/api/scrape-now', {
+        method: 'POST',
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to scrape');
+      }
+
+      setScrapeMessage(
+        data.message || `Successfully scraped ${data.tweetsCount} tweets from ${data.handlesCount} accounts!`
+      );
+
+      // Refresh summaries after scraping
+      await fetchSummaries();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to scrape tweets');
+    } finally {
+      setScraping(false);
+    }
+  };
+
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('en-US', {
       weekday: 'short',
@@ -149,10 +180,20 @@ export default function Home() {
           </div>
 
           <div className={styles.card}>
-            <h2>Recent Summaries</h2>
+            <div className={styles.cardHeader}>
+              <h2>Recent Summaries</h2>
+              <button
+                onClick={triggerScrapeNow}
+                className={styles.scrapeButton}
+                disabled={scraping || handles.length === 0}
+              >
+                {scraping ? 'Scraping...' : 'Refresh Now'}
+              </button>
+            </div>
+            {scrapeMessage && <p className={styles.success}>{scrapeMessage}</p>}
             {summaries.length === 0 ? (
               <p className={styles.emptyState}>
-                No summaries yet. Add some handles and wait for the daily scrape!
+                No summaries yet. Add some handles and click "Refresh Now" to scrape tweets!
               </p>
             ) : (
               <div className={styles.summaryList}>
