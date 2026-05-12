@@ -6,7 +6,7 @@ type Tab = 'today' | 'workout' | 'portuguese' | 'digest' | 'week';
 
 interface Exercise { name: string; prescription: string }
 interface SessionTask { title: string; minutes: string; details: string[] }
-interface CueCardData { front: string; back: string; tag: string }
+interface CueCardData { front: string; back: string; tag: string; frontExample?: string; backExample?: string }
 interface StoryData { title: string; englishTitle: string; newVocab: string; rows: { pt: string; en: string }[]; questions: string[] }
 interface FrequencyEntry { rank: number; word: string; meaning: string; status: string; notes: string; known: boolean }
 interface FrequencyData { baselineKnownCount: number; knownCount: number; nextWords: FrequencyEntry[]; entries: FrequencyEntry[]; rankByWord: Record<string, number>; knownByWord: Record<string, boolean> }
@@ -102,26 +102,34 @@ function CueCard({
   card,
   progress,
   onRate,
+  startSide,
 }: {
   card: CueCardData;
   progress?: CardProgress;
   onRate: (card: CueCardData, rating: CardRating) => void;
+  startSide: 'portuguese' | 'english';
 }) {
   const [flipped, setFlipped] = useState(false);
   const status = progress?.rating === 'easy' ? 'Learned' : progress?.rating === 'hard' ? 'Hard' : progress?.rating === 'again' ? 'Again' : 'New';
+  const frontLabel = startSide === 'portuguese' ? 'Portuguese' : 'English';
+  const backLabel = startSide === 'portuguese' ? 'English' : 'Portuguese';
+  const frontWord = startSide === 'portuguese' ? card.front : card.back;
+  const backWord = startSide === 'portuguese' ? card.back : card.front;
+  const frontExample = startSide === 'portuguese' ? card.frontExample : card.backExample;
+  const backExample = startSide === 'portuguese' ? card.backExample : card.frontExample;
   return (
     <div className={`cue-card ${flipped ? 'is-flipped' : ''}`}>
       <button className="cue-flip" onClick={() => setFlipped(v => !v)} type="button">
         <span className="cue-card-inner">
         <span className="cue-face cue-front">
-          <small>{card.tag} · {status}</small>
-          <strong>{card.front}</strong>
-          <em>Tap to reveal</em>
+          <small>{frontLabel} · {status}</small>
+          <strong>{frontWord}</strong>
+          <em>{frontExample ?? 'Tap to reveal'}</em>
         </span>
         <span className="cue-face cue-back">
-          <small>Answer</small>
-          <strong>{card.back}</strong>
-          <em>Rate below</em>
+          <small>{backLabel}</small>
+          <strong>{backWord}</strong>
+          <em>{backExample ?? 'Rate below'}</em>
         </span>
         </span>
       </button>
@@ -233,6 +241,7 @@ export default function Dashboard() {
   const [workoutLog, setWorkoutLog] = useState<WorkoutLog>({});
   const [storyReadsToday, setStoryReadsToday] = useState<Set<string>>(new Set());
   const [grammarDone, setGrammarDone] = useState(false);
+  const [cueSide, setCueSide] = useState<'portuguese' | 'english'>('portuguese');
 
   const load = useCallback(async () => {
     try {
@@ -259,6 +268,7 @@ export default function Dashboard() {
       setWorkoutLog(JSON.parse(localStorage.getItem('workout-log') ?? '{}'));
       setStoryReadsToday(new Set(JSON.parse(localStorage.getItem(`pt-stories-${today}`) ?? '[]')));
       setGrammarDone(localStorage.getItem(`pt-grammar-${today}`) === '1');
+      setCueSide(localStorage.getItem('pt-cue-side') === 'english' ? 'english' : 'portuguese');
     } catch {
       setProgress({});
       setWorkoutLog({});
@@ -343,6 +353,11 @@ export default function Dashboard() {
       localStorage.setItem(`pt-grammar-${today}`, next ? '1' : '0');
       return next;
     });
+  }, []);
+
+  const toggleCueSide = useCallback((side: 'portuguese' | 'english') => {
+    setCueSide(side);
+    localStorage.setItem('pt-cue-side', side);
   }, []);
 
   if (loading) {
@@ -612,13 +627,29 @@ export default function Dashboard() {
 
             <Card>
               <SectionLabel eyebrow="Review" title="Cue Cards" />
+              <div className="cue-toggle">
+                <button
+                  type="button"
+                  className={cueSide === 'portuguese' ? 'cue-toggle-btn active' : 'cue-toggle-btn'}
+                  onClick={() => toggleCueSide('portuguese')}
+                >
+                  Portuguese first
+                </button>
+                <button
+                  type="button"
+                  className={cueSide === 'english' ? 'cue-toggle-btn active' : 'cue-toggle-btn'}
+                  onClick={() => toggleCueSide('english')}
+                >
+                  English first
+                </button>
+              </div>
               <div className="kpi-grid">
                 <div><span>Learned</span><strong>{learnedWords}</strong></div>
                 <div><span>New today</span><strong>{learnedToday}/10</strong></div>
                 <div><span>Hard queue</span><strong>{hardCards.length}</strong></div>
               </div>
               {portuguese.cueCards.length > 0 ? (
-                <div className="cue-grid">{reviewCards.map(card => <CueCard card={card} progress={progress[cardId(card)]} onRate={rateCard} key={`${card.tag}-${card.front}`} />)}</div>
+                <div className="cue-grid">{reviewCards.map(card => <CueCard card={card} progress={progress[cardId(card)]} onRate={rateCard} startSide={cueSide} key={`${card.tag}-${card.front}-${cueSide}`} />)}</div>
               ) : (
                 <p className="muted">No lesson cue cards available yet. Run the weekly prep to create this week's plan.</p>
               )}

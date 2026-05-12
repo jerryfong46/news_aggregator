@@ -11,7 +11,7 @@ import {
 import {
   getDateInfo, getWeekKey, getAttentionReset,
   getWorkout, parsePTData, fetchWeather,
-  parseDigest, parseOpenItems, getJoeyWeight, enrichWorkout, parseStoryMarkdown,
+  parseDigest, parseOpenItems, getJoeyWeight, enrichWorkout, parseStoryMarkdown, enrichCueCardExamples,
 } from '@/lib/dashboard';
 
 export const revalidate = 300;
@@ -55,6 +55,7 @@ export async function GET() {
     ...portugueseBase,
     stories: portugueseBase.stories.map((story, index) => parseStoryMarkdown(story.title, storyContents[index])),
   };
+  portuguese.cueCards = enrichCueCardExamples(portuguese.cueCards, portuguese.stories);
   const workout = enrichWorkout(getWorkout(dateInfo.weekdayIndex), workoutProgramRaw);
   const digest = digestRaw
     ? { ...parseDigest(digestRaw, dateInfo.iso), sourceDate: dateInfo.iso, isFallback: false }

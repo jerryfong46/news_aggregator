@@ -81,6 +81,8 @@ export interface CueCard {
   front: string;
   back: string;
   tag: string;
+  frontExample?: string;
+  backExample?: string;
 }
 
 export interface StoryData {
@@ -521,6 +523,45 @@ export function parsePTData(
     cueCards: cueCards.length > 0 ? cueCards : DEFAULT_CUE_CARDS,
     frequency,
   };
+}
+
+export function enrichCueCardExamples(cards: CueCard[], stories: StoryData[]): CueCard[] {
+  const storyRows = stories.flatMap(story => story.rows);
+
+  return cards.map(card => {
+    if (card.tag !== 'Vocab') return card;
+
+    const frontKey = normalizeFrequencyTerm(card.front);
+    const backKey = normalizeFrequencyTerm(card.back);
+
+    const matchedRow = storyRows.find(row => {
+      const pt = normalizeFrequencyTerm(row.pt);
+      const en = normalizeFrequencyTerm(row.en);
+      return (frontKey.length >= 3 && pt.includes(frontKey)) || (backKey.length >= 3 && en.includes(backKey));
+    });
+
+    if (matchedRow) {
+      return { ...card, frontExample: matchedRow.pt, backExample: matchedRow.en };
+    }
+
+    if (/(ar|er|ir)$/i.test(frontKey)) {
+      const english = card.back.replace(/^to\s+/i, '');
+      return {
+        ...card,
+        frontExample: `Quero ${card.front}.`,
+        backExample: `I want to ${english}.`,
+      };
+    }
+
+    const ptArticle = /^[aeiouáéíóúãõ]/i.test(card.front) ? 'uma' : 'um';
+    const enArticle = /^[aeiou]/i.test(card.back) ? 'an' : 'a';
+
+    return {
+      ...card,
+      frontExample: `Tenho ${ptArticle} ${card.front}.`,
+      backExample: `I have ${enArticle} ${card.back}.`,
+    };
+  });
 }
 
 export function parseStoryMarkdown(title: string, content: string | null): StoryData {
