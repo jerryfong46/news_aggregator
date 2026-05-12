@@ -116,9 +116,48 @@ function CueCard({
   );
 }
 
-function StoryPanel({ story }: { story: StoryData }) {
+function PTDailyProgress({
+  cardsReviewedToday, totalCards,
+  storiesReadToday, totalStories,
+  grammarDone, masteredTotal,
+  onToggleGrammar,
+}: {
+  cardsReviewedToday: number; totalCards: number;
+  storiesReadToday: number; totalStories: number;
+  grammarDone: boolean; masteredTotal: number;
+  onToggleGrammar: () => void;
+}) {
+  const cardsDone = totalCards > 0 && cardsReviewedToday >= totalCards;
+  const storiesDone = totalStories > 0 && storiesReadToday >= totalStories;
   return (
-    <details className="story-panel">
+    <div className="pt-daily-bar">
+      <div className={`pt-daily-tile${cardsDone ? ' done' : cardsReviewedToday > 0 ? ' partial' : ''}`}>
+        <span>Cards</span>
+        <strong>{cardsReviewedToday}/{totalCards}</strong>
+        <small>{cardsDone ? '✓ done' : 'reviewed'}</small>
+      </div>
+      <div className={`pt-daily-tile${storiesDone ? ' done' : storiesReadToday > 0 ? ' partial' : ''}`}>
+        <span>Stories</span>
+        <strong>{storiesReadToday}/{totalStories}</strong>
+        <small>{storiesDone ? '✓ done' : 'read'}</small>
+      </div>
+      <button type="button" className={`pt-daily-tile${grammarDone ? ' done' : ''}`} onClick={onToggleGrammar}>
+        <span>Grammar</span>
+        <strong>{grammarDone ? '✓' : '—'}</strong>
+        <small>{grammarDone ? 'done' : 'tap to log'}</small>
+      </button>
+      <div className="pt-daily-tile pt-daily-mastered">
+        <span>Mastered</span>
+        <strong>{masteredTotal}</strong>
+        <small>all time</small>
+      </div>
+    </div>
+  );
+}
+
+function StoryPanel({ story, onOpen }: { story: StoryData; onOpen?: () => void }) {
+  return (
+    <details className="story-panel" onToggle={(e) => { if (e.currentTarget.open) onOpen?.(); }}>
       <summary>
         <span>{story.title}</span>
         {story.englishTitle && <em>{story.englishTitle}</em>}
@@ -172,6 +211,8 @@ export default function Dashboard() {
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [progress, setProgress] = useState<ProgressMap>({});
   const [workoutLog, setWorkoutLog] = useState<WorkoutLog>({});
+  const [storyReadsToday, setStoryReadsToday] = useState<Set<string>>(new Set());
+  const [grammarDone, setGrammarDone] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -193,8 +234,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     try {
+      const today = new Date().toLocaleDateString('en-CA');
       setProgress(JSON.parse(localStorage.getItem('pt-card-progress') ?? '{}'));
       setWorkoutLog(JSON.parse(localStorage.getItem('workout-log') ?? '{}'));
+      setStoryReadsToday(new Set(JSON.parse(localStorage.getItem(`pt-stories-${today}`) ?? '[]')));
+      setGrammarDone(localStorage.getItem(`pt-grammar-${today}`) === '1');
     } catch {
       setProgress({});
       setWorkoutLog({});
@@ -262,6 +306,25 @@ export default function Dashboard() {
     });
   }, []);
 
+  const markStoryRead = useCallback((title: string) => {
+    const today = new Date().toLocaleDateString('en-CA');
+    setStoryReadsToday(current => {
+      const next = new Set(current);
+      next.add(title);
+      localStorage.setItem(`pt-stories-${today}`, JSON.stringify(Array.from(next)));
+      return next;
+    });
+  }, []);
+
+  const toggleGrammar = useCallback(() => {
+    const today = new Date().toLocaleDateString('en-CA');
+    setGrammarDone(current => {
+      const next = !current;
+      localStorage.setItem(`pt-grammar-${today}`, next ? '1' : '0');
+      return next;
+    });
+  }, []);
+
   if (loading) {
     return <div className="loading"><div className="spinner" /><p>Loading dashboard...</p></div>;
   }
@@ -282,6 +345,7 @@ export default function Dashboard() {
   const newWordCards = vocabCards.filter(card => !progress[cardId(card)]?.learned && !hardCards.some(hard => cardId(hard) === cardId(card))).slice(0, 10);
   const supportCards = portuguese.cueCards.filter(card => card.tag !== 'Vocab' && !hardCards.some(hard => cardId(hard) === cardId(card)));
   const reviewCards = [...hardCards, ...newWordCards, ...supportCards];
+  const reviewCardsReviewedToday = reviewCards.filter(card => progress[cardId(card)]?.reviewedAt?.startsWith(todayIso)).length;
   const grammarPracticeTasks = portuguese.sessionTasks.filter(isGrammarPracticeTask);
   const todaysWorkout = workoutLog[date.iso] ?? { lifts: {} };
   const workoutWeek = [
@@ -445,11 +509,15 @@ export default function Dashboard() {
                 <p className="notice">Current week plan is missing. Showing latest available lesson content.</p>
               )}
               {portuguese.weekTarget && <p className="lead">{portuguese.weekTarget}</p>}
-              <div className="kpi-grid pt-kpis">
-                <div><span>Words learned</span><strong>{learnedWords}</strong></div>
-                <div><span>Words mastered</span><strong>{masteredWords}</strong></div>
-                <div><span>Today</span><strong>{learnedToday}/10</strong></div>
-              </div>
+              <PTDailyProgress
+                cardsReviewedToday={reviewCardsReviewedToday}
+                totalCards={reviewCards.length}
+                storiesReadToday={storyReadsToday.size}
+                totalStories={portuguese.stories.length}
+                grammarDone={grammarDone}
+                masteredTotal={masteredWords}
+                onToggleGrammar={toggleGrammar}
+              />
             </Card>
 
             {grammarPracticeTasks.length > 0 && (
@@ -469,8 +537,8 @@ export default function Dashboard() {
             <Card>
               <SectionLabel eyebrow="Review" title="Cue Cards" />
               <div className="kpi-grid">
-                <div><span>Total learned</span><strong>{learnedWords}</strong></div>
-                <div><span>Today</span><strong>{learnedToday}/10</strong></div>
+                <div><span>Learned</span><strong>{learnedWords}</strong></div>
+                <div><span>New today</span><strong>{learnedToday}/10</strong></div>
                 <div><span>Hard queue</span><strong>{hardCards.length}</strong></div>
               </div>
               {portuguese.cueCards.length > 0 ? (
@@ -490,7 +558,7 @@ export default function Dashboard() {
             <Card>
               <SectionLabel eyebrow="Read" title="Weekly Stories" />
               <div className="story-stack">
-                {portuguese.stories.map(story => <StoryPanel story={story} key={story.title} />)}
+                {portuguese.stories.map(story => <StoryPanel story={story} key={story.title} onOpen={() => markStoryRead(story.title)} />)}
               </div>
             </Card>
 

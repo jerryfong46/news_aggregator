@@ -332,16 +332,12 @@ function parseSessionTasks(sessionContent: string): SessionTask[] {
 }
 
 function parseCueCards(sessionContent: string): CueCard[] {
-  const cards: CueCard[] = [];
+  const vocabCards: CueCard[] = [];
+  const chunkCards: CueCard[] = [];
+  const clozeCards: CueCard[] = [];
+  const wordTranslations: Record<string, string> = {};
 
-  const vocab = sessionContent.match(/\*\*New vocab seeded this session \(\d+\):\*\*\s*([^.\n]+)\.?/);
-  if (vocab) {
-    vocab[1].split(',').forEach(word => {
-      const clean = stripMarkdown(word);
-      if (clean) cards.push({ front: clean, back: 'Say it aloud, give the English meaning, then make one sentence.', tag: 'Vocab' });
-    });
-  }
-
+  // Parse chunk table first so we can cross-reference vocab
   const sessionLines = sessionContent.split('\n');
   const chunkStart = sessionLines.findIndex(line => line.trim().startsWith('| Chunk | Meaning |'));
   const chunkLines = chunkStart === -1
@@ -350,16 +346,40 @@ function parseCueCards(sessionContent: string): CueCard[] {
   chunkLines.forEach(line => {
     const cells = line.split('|').map(cell => stripMarkdown(cell)).filter(Boolean);
     if (cells.length === 2 && cells[0] !== 'Chunk' && !cells[0].startsWith('---')) {
-      cards.push({ front: cells[0], back: cells[1], tag: 'Chunk' });
+      chunkCards.push({ front: cells[0], back: cells[1], tag: 'Chunk' });
+      // Index individual words so vocab cards can borrow the translation
+      cells[0].split(/\s+/).forEach(w => {
+        const key = w.toLowerCase().replace(/[.,!?]/g, '');
+        if (key && !wordTranslations[key]) wordTranslations[key] = cells[1];
+      });
     }
   });
 
-  const clozeLines = Array.from(sessionContent.matchAll(/^\d+\.\s+(.+?)→\s*(.+)$/gm));
-  clozeLines.forEach(match => {
-    cards.push({ front: stripMarkdown(match[1]), back: stripMarkdown(match[2]), tag: 'Cloze' });
+  // Parse vocab — try inline translations, then chunk cross-ref, then self-check fallback
+  const vocab = sessionContent.match(/\*\*New vocab seeded this session \(\d+\):\*\*\s*([^.\n]+)\.?/);
+  if (vocab) {
+    vocab[1].split(',').forEach(word => {
+      const clean = stripMarkdown(word.trim());
+      if (!clean) return;
+      const parenMatch = clean.match(/^(.+?)\s*\(([^)]+)\)$/);
+      const dashMatch = clean.match(/^(.+?)\s*[—–-]\s*(.+)$/);
+      if (parenMatch) {
+        vocabCards.push({ front: parenMatch[1].trim(), back: parenMatch[2].trim(), tag: 'Vocab' });
+      } else if (dashMatch) {
+        vocabCards.push({ front: dashMatch[1].trim(), back: dashMatch[2].trim(), tag: 'Vocab' });
+      } else {
+        const translation = wordTranslations[clean.toLowerCase()];
+        vocabCards.push({ front: clean, back: translation ?? 'Recall the meaning aloud.', tag: 'Vocab' });
+      }
+    });
+  }
+
+  // Parse cloze
+  Array.from(sessionContent.matchAll(/^\d+\.\s+(.+?)→\s*(.+)$/gm)).forEach(match => {
+    clozeCards.push({ front: stripMarkdown(match[1]), back: stripMarkdown(match[2]), tag: 'Cloze' });
   });
 
-  return cards.slice(0, 24);
+  return [...vocabCards, ...chunkCards, ...clozeCards].slice(0, 24);
 }
 
 export function parsePTData(
