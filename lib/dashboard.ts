@@ -12,6 +12,8 @@ export interface DigestData {
   totalTweets: number;
   newsArticles: number;
   sections: DigestSection[];
+  sourceDate?: string;
+  isFallback?: boolean;
 }
 
 export interface DigestSection {

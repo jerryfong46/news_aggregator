@@ -20,6 +20,7 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Toronto' }));
   const dateInfo = getDateInfo(now);
+  const yesterdayInfo = getDateInfo(new Date(now.getTime() - 86400000));
   const weekKey = getWeekKey(now);
   const previousWeekKey = getWeekKey(new Date(now.getTime() - 7 * 86400000));
   const reset = getAttentionReset(now);
@@ -27,6 +28,7 @@ export async function GET() {
   const [
     weatherData,
     digestRaw,
+    yesterdayDigestRaw,
     dashboardRaw,
     lessonRaw,
     previousLessonRaw,
@@ -36,6 +38,7 @@ export async function GET() {
   ] = await Promise.all([
     fetchWeather(),
     fetchDigest(dateInfo.iso),
+    fetchDigest(yesterdayInfo.iso),
     fetchDashboard(),
     fetchWeeklyLesson(weekKey),
     fetchWeeklyLesson(previousWeekKey),
@@ -53,7 +56,11 @@ export async function GET() {
     stories: portugueseBase.stories.map((story, index) => parseStoryMarkdown(story.title, storyContents[index])),
   };
   const workout = enrichWorkout(getWorkout(dateInfo.weekdayIndex), workoutProgramRaw);
-  const digest = digestRaw ? parseDigest(digestRaw, dateInfo.iso) : null;
+  const digest = digestRaw
+    ? { ...parseDigest(digestRaw, dateInfo.iso), sourceDate: dateInfo.iso, isFallback: false }
+    : yesterdayDigestRaw
+      ? { ...parseDigest(yesterdayDigestRaw, yesterdayInfo.iso), sourceDate: yesterdayInfo.iso, isFallback: true }
+      : null;
   const openItems = dashboardRaw ? parseOpenItems(dashboardRaw, dateInfo.iso) : null;
   const joeyWeight = dashboardRaw ? getJoeyWeight(dashboardRaw) : '5.345 kg';
 

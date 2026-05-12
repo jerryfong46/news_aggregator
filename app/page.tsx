@@ -38,7 +38,7 @@ interface DashboardData {
     cueCards: CueCardData[];
     frequency: FrequencyData;
   };
-  digest: { date: string; totalTweets: number; newsArticles: number; sections: { heading: string; emoji: string; items: string[] }[] } | null;
+  digest: { date: string; totalTweets: number; newsArticles: number; sections: { heading: string; emoji: string; items: string[] }[]; sourceDate?: string; isFallback?: boolean } | null;
   openItems: { overdue: string[]; dueThisWeek: string[]; p0s: string[]; daycareCount: number } | null;
 }
 
@@ -652,6 +652,9 @@ export default function Dashboard() {
             <SectionLabel eyebrow="News" title={digest ? `Digest · ${digest.date}` : 'Digest'} />
             {digest ? (
               <>
+                {digest.isFallback && (
+                  <p className="notice">Today’s digest has not run yet. Showing the latest available digest from {digest.sourceDate}.</p>
+                )}
                 <div className="digest-meta">{digest.totalTweets} tweets · {digest.newsArticles} headlines</div>
                 {digest.sections.map((section, i) => <DigestSection key={section.heading} section={section} index={i} />)}
               </>
