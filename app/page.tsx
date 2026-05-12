@@ -64,6 +64,10 @@ function cardId(card: CueCardData) {
   return `${card.tag}:${card.front}`;
 }
 
+function isGrammarPracticeTask(task: SessionTask) {
+  return /production|mixed cloze|weak-point drill|mini-probe/i.test(task.title);
+}
+
 function postProgressEvent(event: object) {
   fetch('/api/progress', {
     method: 'POST',
@@ -270,12 +274,15 @@ export default function Dashboard() {
   const overdueCount = (openItems?.overdue.length ?? 0) + (openItems?.p0s.length ?? 0);
   const todayIso = new Date().toLocaleDateString('en-CA');
   const vocabCards = portuguese.cueCards.filter(card => card.tag === 'Vocab');
-  const learnedWords = Object.entries(progress).filter(([id, value]) => id.startsWith('Vocab:') && value.learned);
-  const learnedToday = learnedWords.filter(([, value]) => value.reviewedAt?.startsWith(todayIso)).length;
+  const vocabProgressEntries = Object.entries(progress).filter(([id]) => id.startsWith('Vocab:'));
+  const learnedWords = vocabProgressEntries.length;
+  const masteredWords = vocabProgressEntries.filter(([, value]) => value.learned || value.rating === 'easy').length;
+  const learnedToday = vocabProgressEntries.filter(([, value]) => value.reviewedAt?.startsWith(todayIso)).length;
   const hardCards = portuguese.cueCards.filter(card => ['again', 'hard'].includes(progress[cardId(card)]?.rating ?? ''));
   const newWordCards = vocabCards.filter(card => !progress[cardId(card)]?.learned && !hardCards.some(hard => cardId(hard) === cardId(card))).slice(0, 10);
   const supportCards = portuguese.cueCards.filter(card => card.tag !== 'Vocab' && !hardCards.some(hard => cardId(hard) === cardId(card)));
   const reviewCards = [...hardCards, ...newWordCards, ...supportCards];
+  const grammarPracticeTasks = portuguese.sessionTasks.filter(isGrammarPracticeTask);
   const todaysWorkout = workoutLog[date.iso] ?? { lifts: {} };
   const workoutWeek = [
     ['Mon', 'Push A'],
@@ -345,7 +352,7 @@ export default function Dashboard() {
                 <button className="hero-tile" onClick={() => setActiveTab('portuguese')} type="button">
                   <span>Portuguese</span>
                   <strong>{portuguese.sessionTitle}</strong>
-                  <em>{learnedWords.length} words learned</em>
+                  <em>{learnedWords} learned · {masteredWords} mastered</em>
                 </button>
               </div>
             </Card>
@@ -438,13 +445,18 @@ export default function Dashboard() {
                 <p className="notice">Current week plan is missing. Showing latest available lesson content.</p>
               )}
               {portuguese.weekTarget && <p className="lead">{portuguese.weekTarget}</p>}
+              <div className="kpi-grid pt-kpis">
+                <div><span>Words learned</span><strong>{learnedWords}</strong></div>
+                <div><span>Words mastered</span><strong>{masteredWords}</strong></div>
+                <div><span>Today</span><strong>{learnedToday}/10</strong></div>
+              </div>
             </Card>
 
-            {portuguese.sessionTasks.length > 0 && (
+            {grammarPracticeTasks.length > 0 && (
               <Card>
-                <SectionLabel eyebrow="30 min" title="Session Plan" />
+                <SectionLabel eyebrow="Practice" title="Grammar Worksheet" />
                 <div className="task-stack">
-                  {portuguese.sessionTasks.map(task => (
+                  {grammarPracticeTasks.map(task => (
                     <div className="task-card" key={task.title}>
                       <div className="task-heading"><strong>{task.title}</strong>{task.minutes && <span>{task.minutes}</span>}</div>
                       <ul>{task.details.map(detail => <li key={detail}>{detail}</li>)}</ul>
@@ -457,7 +469,7 @@ export default function Dashboard() {
             <Card>
               <SectionLabel eyebrow="Review" title="Cue Cards" />
               <div className="kpi-grid">
-                <div><span>Total learned</span><strong>{learnedWords.length}</strong></div>
+                <div><span>Total learned</span><strong>{learnedWords}</strong></div>
                 <div><span>Today</span><strong>{learnedToday}/10</strong></div>
                 <div><span>Hard queue</span><strong>{hardCards.length}</strong></div>
               </div>
