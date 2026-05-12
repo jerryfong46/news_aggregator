@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   fetchDashboard,
   fetchDigest,
+  fetchPortugueseFrequencyMasterList,
   fetchPortugueseMethod,
   fetchPortugueseStory,
   fetchWeeklyLesson,
@@ -31,6 +32,7 @@ export async function GET() {
     previousLessonRaw,
     workoutProgramRaw,
     portugueseMethodRaw,
+    frequencyRaw,
   ] = await Promise.all([
     fetchWeather(),
     fetchDigest(dateInfo.iso),
@@ -39,11 +41,12 @@ export async function GET() {
     fetchWeeklyLesson(previousWeekKey),
     fetchWorkoutProgram(),
     fetchPortugueseMethod(),
+    fetchPortugueseFrequencyMasterList(),
   ]);
 
   const lessonForUi = lessonRaw ?? previousLessonRaw;
   const lessonStatus = lessonRaw ? 'current' : previousLessonRaw ? 'fallback' : 'missing';
-  const portugueseBase = parsePTData(dateInfo.weekdayIndex, weekKey, lessonForUi, lessonStatus, portugueseMethodRaw);
+  const portugueseBase = parsePTData(dateInfo.weekdayIndex, weekKey, lessonForUi, lessonStatus, portugueseMethodRaw, frequencyRaw);
   const storyContents = await Promise.all(portugueseBase.stories.map(story => fetchPortugueseStory(story.title)));
   const portuguese = {
     ...portugueseBase,

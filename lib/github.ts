@@ -38,6 +38,10 @@ export async function fetchPortugueseMethod(): Promise<string | null> {
   return githubFetch('Resources/Portuguese/Learning Method.md');
 }
 
+export async function fetchPortugueseFrequencyMasterList(): Promise<string | null> {
+  return githubFetch('Resources/Portuguese/Vocabulary/Frequency Master List.md');
+}
+
 export async function fetchSRReview(): Promise<string | null> {
   return githubFetch('Resources/Portuguese/SR Review.md');
 }

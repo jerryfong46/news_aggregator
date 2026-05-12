@@ -65,6 +65,7 @@ button { cursor: pointer; }
 .chip-red { color: var(--red); border-color: rgba(255, 118, 111, 0.4); }
 .chip-green { color: var(--green); border-color: rgba(127, 208, 138, 0.35); }
 .chip-amber { color: var(--amber); border-color: rgba(247, 185, 85, 0.35); }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
 
 .btn-refresh-sm {
   border: 1px solid var(--line);

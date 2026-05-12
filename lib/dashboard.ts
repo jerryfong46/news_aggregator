@@ -33,6 +33,25 @@ export interface PortugueseData {
   dailyAnchors: string[];
   sessionTasks: SessionTask[];
   cueCards: CueCard[];
+  frequency: FrequencyData;
+}
+
+export interface FrequencyEntry {
+  rank: number;
+  word: string;
+  meaning: string;
+  status: string;
+  notes: string;
+  known: boolean;
+}
+
+export interface FrequencyData {
+  baselineKnownCount: number;
+  knownCount: number;
+  nextWords: FrequencyEntry[];
+  entries: FrequencyEntry[];
+  rankByWord: Record<string, number>;
+  knownByWord: Record<string, boolean>;
 }
 
 export interface WorkoutData {
@@ -187,6 +206,14 @@ function stripMarkdown(value: string): string {
     .trim();
 }
 
+function normalizeFrequencyTerm(value: string): string {
+  return stripMarkdown(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
 function extractSection(markdown: string, heading: string): string {
   const lines = markdown.split('\n');
   const start = lines.findIndex(line => line.trim() === `## ${heading}`);
@@ -201,6 +228,51 @@ function extractListItems(markdown: string): string[] {
     .map(line => line.replace(/^\s*[-*]\s+/, '').replace(/^\s*\d+\.\s+/, '').trim())
     .filter(line => line.length > 0 && !line.startsWith('|') && !line.startsWith('#'))
     .map(stripMarkdown);
+}
+
+export function parseFrequencyMasterList(content: string | null): FrequencyData {
+  const baselineKnownCount = 100;
+  if (!content) {
+    return { baselineKnownCount, knownCount: baselineKnownCount, nextWords: [], entries: [], rankByWord: {}, knownByWord: {} };
+  }
+
+  const entries: FrequencyEntry[] = [];
+  content.split('\n').forEach(line => {
+    const cells = line.split('|').map(cell => stripMarkdown(cell)).filter(Boolean);
+    if (cells.length < 4) return;
+    const rank = Number.parseInt(cells[0], 10);
+    if (!Number.isFinite(rank)) return;
+
+    const word = cells[1] ?? '';
+    const meaning = cells[2] ?? '';
+    const status = cells[3] ?? '';
+    const notes = cells[4] ?? '';
+    const known = rank <= baselineKnownCount || /✅|📖/.test(status);
+    entries.push({ rank, word, meaning, status, notes, known });
+  });
+
+  entries.sort((a, b) => a.rank - b.rank);
+
+  const rankByWord: Record<string, number> = {};
+  const knownByWord: Record<string, boolean> = {};
+  entries.forEach(entry => {
+    entry.word.split('/').forEach(part => {
+      part.split(',').forEach(piece => {
+        const key = normalizeFrequencyTerm(piece);
+        if (key && rankByWord[key] === undefined) {
+          rankByWord[key] = entry.rank;
+        }
+        if (key && entry.known) {
+          knownByWord[key] = true;
+        }
+      });
+    });
+  });
+
+  const knownCount = entries.filter(entry => entry.known).length;
+  const nextWords = entries.filter(entry => !entry.known).slice(0, 24);
+
+  return { baselineKnownCount, knownCount, nextWords, entries, rankByWord, knownByWord };
 }
 
 export function enrichWorkout(workout: WorkoutData, programContent: string | null): WorkoutData {
@@ -388,6 +460,7 @@ export function parsePTData(
   lessonContent: string | null,
   lessonStatus: 'current' | 'fallback' | 'missing' = 'current',
   methodContent: string | null = null,
+  frequencyContent: string | null = null,
 ): PortugueseData {
   const session = PT_SESSION_MAP[weekdayIndex] ?? PT_SESSION_MAP[5];
 
@@ -417,6 +490,7 @@ export function parsePTData(
   const dailyAnchors = extractListItems(methodAnchors).slice(0, 4);
   const sessionTasks = parseSessionTasks(sessionContent);
   const cueCards = parseCueCards(sessionContent);
+  const frequency = parseFrequencyMasterList(frequencyContent);
 
   return {
     sessionNumber: session.number,
@@ -431,6 +505,7 @@ export function parsePTData(
     dailyAnchors: dailyAnchors.length > 0 ? dailyAnchors : DEFAULT_DAILY_ANCHORS,
     sessionTasks: session.number && sessionTasks.length > 0 ? sessionTasks : session.number ? DEFAULT_PT_TASKS[session.number] ?? [] : [],
     cueCards: cueCards.length > 0 ? cueCards : DEFAULT_CUE_CARDS,
+    frequency,
   };
 }
 

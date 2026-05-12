@@ -8,6 +8,8 @@ interface Exercise { name: string; prescription: string }
 interface SessionTask { title: string; minutes: string; details: string[] }
 interface CueCardData { front: string; back: string; tag: string }
 interface StoryData { title: string; englishTitle: string; newVocab: string; rows: { pt: string; en: string }[]; questions: string[] }
+interface FrequencyEntry { rank: number; word: string; meaning: string; status: string; notes: string; known: boolean }
+interface FrequencyData { baselineKnownCount: number; knownCount: number; nextWords: FrequencyEntry[]; entries: FrequencyEntry[]; rankByWord: Record<string, number>; knownByWord: Record<string, boolean> }
 type CardRating = 'again' | 'hard' | 'easy';
 interface CardProgress { rating: CardRating; reviewedAt: string; learned?: boolean }
 type ProgressMap = Record<string, CardProgress>;
@@ -34,6 +36,7 @@ interface DashboardData {
     dailyAnchors: string[];
     sessionTasks: SessionTask[];
     cueCards: CueCardData[];
+    frequency: FrequencyData;
   };
   digest: { date: string; totalTweets: number; newsArticles: number; sections: { heading: string; emoji: string; items: string[] }[] } | null;
   openItems: { overdue: string[]; dueThisWeek: string[]; p0s: string[]; daycareCount: number } | null;
@@ -64,8 +67,25 @@ function cardId(card: CueCardData) {
   return `${card.tag}:${card.front}`;
 }
 
+function normalizeFrequencyTerm(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
 function isGrammarPracticeTask(task: SessionTask) {
   return /production|mixed cloze|weak-point drill|mini-probe/i.test(task.title);
+}
+
+function cardFrequencyRank(card: CueCardData, frequency: FrequencyData) {
+  return frequency.rankByWord[normalizeFrequencyTerm(card.front)] ?? Number.POSITIVE_INFINITY;
+}
+
+function isKnownFrequencyCard(card: CueCardData, frequency: FrequencyData) {
+  const key = normalizeFrequencyTerm(card.front);
+  return Boolean(frequency.knownByWord[key] || (frequency.rankByWord[key] !== undefined && frequency.rankByWord[key] <= frequency.baselineKnownCount));
 }
 
 function postProgressEvent(event: object) {
@@ -336,17 +356,34 @@ export default function Dashboard() {
   const { date, reset, joey, weather, workout, transit, portuguese, digest, openItems } = data;
   const overdueCount = (openItems?.overdue.length ?? 0) + (openItems?.p0s.length ?? 0);
   const todayIso = new Date().toLocaleDateString('en-CA');
+  const frequency = portuguese.frequency;
+  const baselineKnownCount = frequency?.baselineKnownCount ?? 100;
   const vocabCards = portuguese.cueCards.filter(card => card.tag === 'Vocab');
+  const baselineKnownWords = new Set((frequency?.entries ?? []).filter(entry => entry.known).flatMap(entry => (
+    entry.word.split('/').flatMap(part => part.split(',')).map(piece => normalizeFrequencyTerm(piece))
+  )).filter(Boolean));
   const vocabProgressEntries = Object.entries(progress).filter(([id]) => id.startsWith('Vocab:'));
-  const learnedWords = vocabProgressEntries.length;
-  const masteredWords = vocabProgressEntries.filter(([, value]) => value.learned || value.rating === 'easy').length;
-  const learnedToday = vocabProgressEntries.filter(([, value]) => value.reviewedAt?.startsWith(todayIso)).length;
-  const hardCards = portuguese.cueCards.filter(card => ['again', 'hard'].includes(progress[cardId(card)]?.rating ?? ''));
-  const newWordCards = vocabCards.filter(card => !progress[cardId(card)]?.learned && !hardCards.some(hard => cardId(hard) === cardId(card))).slice(0, 10);
+  const novelProgressEntries = vocabProgressEntries.filter(([id]) => {
+    const front = id.slice('Vocab:'.length);
+    const key = normalizeFrequencyTerm(front);
+    return !baselineKnownWords.has(key);
+  });
+  const learnedWords = baselineKnownCount + novelProgressEntries.length;
+  const masteredWords = baselineKnownCount + novelProgressEntries.filter(([, value]) => value.learned || value.rating === 'easy').length;
+  const learnedToday = novelProgressEntries.filter(([, value]) => value.reviewedAt?.startsWith(todayIso)).length;
+  const hardCards = portuguese.cueCards
+    .filter(card => ['again', 'hard'].includes(progress[cardId(card)]?.rating ?? ''))
+    .filter(card => card.tag !== 'Vocab' || !isKnownFrequencyCard(card, frequency))
+    .sort((a, b) => cardFrequencyRank(a, frequency) - cardFrequencyRank(b, frequency));
+  const sortedVocabCards = vocabCards
+    .filter(card => !isKnownFrequencyCard(card, frequency))
+    .sort((a, b) => cardFrequencyRank(a, frequency) - cardFrequencyRank(b, frequency) || a.front.localeCompare(b.front));
+  const newWordCards = sortedVocabCards.filter(card => !progress[cardId(card)]?.learned && !hardCards.some(hard => cardId(hard) === cardId(card))).slice(0, 10);
   const supportCards = portuguese.cueCards.filter(card => card.tag !== 'Vocab' && !hardCards.some(hard => cardId(hard) === cardId(card)));
   const reviewCards = [...hardCards, ...newWordCards, ...supportCards];
   const reviewCardsReviewedToday = reviewCards.filter(card => progress[cardId(card)]?.reviewedAt?.startsWith(todayIso)).length;
   const grammarPracticeTasks = portuguese.sessionTasks.filter(isGrammarPracticeTask);
+  const frequencyNextWords = (frequency?.nextWords ?? []).slice(0, 12);
   const todaysWorkout = workoutLog[date.iso] ?? { lifts: {} };
   const workoutWeek = [
     ['Mon', 'Push A'],
@@ -518,6 +555,25 @@ export default function Dashboard() {
                 masteredTotal={masteredWords}
                 onToggleGrammar={toggleGrammar}
               />
+            </Card>
+
+            <Card>
+              <SectionLabel eyebrow="Frequency" title="Known baseline" />
+              <p className="lead">Top 100 frequency words are treated as known already. New review starts at rank 101.</p>
+              <div className="kpi-grid pt-kpis">
+                <div><span>Baseline</span><strong>{baselineKnownCount}</strong></div>
+                <div><span>Learned</span><strong>{learnedWords}</strong></div>
+                <div><span>Mastered</span><strong>{masteredWords}</strong></div>
+              </div>
+              {frequencyNextWords.length > 0 && (
+                <div className="chip-row">
+                  {frequencyNextWords.map(word => (
+                    <Chip key={`${word.rank}-${word.word}`} color={word.rank <= baselineKnownCount ? 'green' : 'amber'}>
+                      {word.rank}. {word.word}
+                    </Chip>
+                  ))}
+                </div>
+              )}
             </Card>
 
             {grammarPracticeTasks.length > 0 && (
