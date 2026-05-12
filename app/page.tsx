@@ -64,6 +64,16 @@ function cardId(card: CueCardData) {
   return `${card.tag}:${card.front}`;
 }
 
+function postProgressEvent(event: object) {
+  fetch('/api/progress', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(event),
+  }).catch(() => {
+    // Local storage remains the immediate source of truth if network sync fails.
+  });
+}
+
 function CueCard({
   card,
   progress,
@@ -188,19 +198,32 @@ export default function Dashboard() {
   }, []);
 
   const rateCard = useCallback((card: CueCardData, rating: CardRating) => {
+    const timestamp = new Date().toISOString();
+    const learned = rating === 'easy' || progress[cardId(card)]?.learned || false;
     setProgress(current => {
       const next = {
         ...current,
         [cardId(card)]: {
           rating,
-          reviewedAt: new Date().toISOString(),
+          reviewedAt: timestamp,
           learned: rating === 'easy' || current[cardId(card)]?.learned,
         },
       };
       localStorage.setItem('pt-card-progress', JSON.stringify(next));
       return next;
     });
-  }, []);
+    postProgressEvent({
+      type: 'pt_card_review',
+      date: new Date().toLocaleDateString('en-CA'),
+      timestamp,
+      cardId: cardId(card),
+      front: card.front,
+      back: card.back,
+      tag: card.tag,
+      rating,
+      learned,
+    });
+  }, [progress]);
 
   const updateWorkout = useCallback((iso: string, updater: (entry: WorkoutEntry) => WorkoutEntry) => {
     setWorkoutLog(current => {
@@ -210,6 +233,28 @@ export default function Dashboard() {
       };
       localStorage.setItem('workout-log', JSON.stringify(next));
       return next;
+    });
+  }, []);
+
+  const syncWorkoutCompleted = useCallback((iso: string, workoutName: string, completed: boolean) => {
+    postProgressEvent({
+      type: 'workout_completed',
+      date: iso,
+      timestamp: new Date().toISOString(),
+      workoutName,
+      completed,
+    });
+  }, []);
+
+  const syncWorkoutLift = useCallback((iso: string, workoutName: string, exercise: Exercise, value: string) => {
+    postProgressEvent({
+      type: 'workout_lift',
+      date: iso,
+      timestamp: new Date().toISOString(),
+      workoutName,
+      liftName: exercise.name,
+      prescription: exercise.prescription,
+      value,
     });
   }, []);
 
@@ -340,7 +385,10 @@ export default function Dashboard() {
                     <input
                       type="checkbox"
                       checked={!!todaysWorkout.completed}
-                      onChange={event => updateWorkout(date.iso, entry => ({ ...entry, completed: event.target.checked }))}
+                      onChange={event => {
+                        updateWorkout(date.iso, entry => ({ ...entry, completed: event.target.checked }));
+                        syncWorkoutCompleted(date.iso, workout.name, event.target.checked);
+                      }}
                     />
                     <span>{todaysWorkout.completed ? 'Workout completed' : 'Mark workout complete'}</span>
                   </label>
@@ -358,6 +406,7 @@ export default function Dashboard() {
                               ...entry,
                               lifts: { ...entry.lifts, [exercise.name]: event.target.value },
                             }))}
+                            onBlur={event => syncWorkoutLift(date.iso, workout.name, exercise, event.target.value)}
                             placeholder="e.g. 185 x 6, 185 x 5, 175 x 6"
                           />
                         </div>

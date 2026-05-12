@@ -14,6 +14,7 @@ import {
 } from '@/lib/dashboard';
 
 export const revalidate = 300;
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Toronto' }));
