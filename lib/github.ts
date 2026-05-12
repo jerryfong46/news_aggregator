@@ -5,7 +5,8 @@ async function githubFetch(path: string): Promise<string | null> {
   const token = process.env.GITHUB_PAT;
   if (!token) return null;
 
-  const res = await fetch(`${BASE}/repos/${REPO}/contents/${encodeURIComponent(path)}`, {
+  const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+  const res = await fetch(`${BASE}/repos/${REPO}/contents/${encodedPath}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/vnd.github.v3.raw',
@@ -27,4 +28,16 @@ export async function fetchDashboard(): Promise<string | null> {
 
 export async function fetchWeeklyLesson(weekKey: string): Promise<string | null> {
   return githubFetch(`Resources/Portuguese/Weekly Lessons/${weekKey}.md`);
+}
+
+export async function fetchWorkoutProgram(): Promise<string | null> {
+  return githubFetch('Areas/Fitness/Current Program - PPL-PP Split.md');
+}
+
+export async function fetchPortugueseMethod(): Promise<string | null> {
+  return githubFetch('Resources/Portuguese/Learning Method.md');
+}
+
+export async function fetchSRReview(): Promise<string | null> {
+  return githubFetch('Resources/Portuguese/SR Review.md');
 }

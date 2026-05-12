@@ -26,12 +26,39 @@ export interface PortugueseData {
   stories: string[];
   weekKey: string;
   weekAnchor: string;
+  lessonStatus: 'current' | 'fallback' | 'missing';
+  weekTarget: string;
+  successCriteria: string[];
+  dailyAnchors: string[];
+  sessionTasks: SessionTask[];
+  cueCards: CueCard[];
 }
 
 export interface WorkoutData {
   name: string;
   anchor: string;
   isRest: boolean;
+  duration?: string;
+  template?: string[];
+  exercises?: Exercise[];
+  progression?: string[];
+}
+
+export interface Exercise {
+  name: string;
+  prescription: string;
+}
+
+export interface SessionTask {
+  title: string;
+  minutes: string;
+  details: string[];
+}
+
+export interface CueCard {
+  front: string;
+  back: string;
+  tag: string;
 }
 
 export interface OpenItems {
@@ -97,8 +124,103 @@ const WORKOUT_MAP: Record<number, WorkoutData> = {
   0: { name: 'Pull B', anchor: 'Pull B — Sunday', isRest: false },
 };
 
+const STATIC_WORKOUTS: Record<string, Exercise[]> = {
+  'Push A': [
+    { name: 'Bench press', prescription: '3 x 4-6' },
+    { name: 'Overhead press or incline DB press', prescription: '3 x 6-10' },
+    { name: 'Triceps: weighted dip or cable pushdown', prescription: '2-3 x 8-12' },
+  ],
+  'Pull A': [
+    { name: 'Weighted pull-up or chin-up', prescription: '3 x 4-8' },
+    { name: 'Chest-supported row or cable row', prescription: '3 x 6-10' },
+    { name: 'Face pull or biceps curl', prescription: '2-3 x 10-15' },
+  ],
+  Legs: [
+    { name: 'Leg extension', prescription: '3 x 8-12' },
+    { name: 'Bulgarian split squat or reverse lunge', prescription: '3 x 8-12 per leg' },
+    { name: 'Dumbbell or cable deadlift', prescription: '2-3 x 8-10' },
+    { name: 'Optional calf raise', prescription: '2 x 12-15' },
+  ],
+  'Push B': [
+    { name: 'Incline DB press or weighted dip', prescription: '3 x 6-8' },
+    { name: 'Overhead press: standing or seated DB', prescription: '3 x 6-10' },
+    { name: 'Lateral raise or triceps extension', prescription: '2-3 x 10-15' },
+  ],
+  'Pull B': [
+    { name: 'Barbell or dumbbell row', prescription: '3 x 6-10' },
+    { name: 'Lat pulldown or assisted pull-up', prescription: '3 x 8-12' },
+    { name: 'Hammer curl or EZ-bar curl', prescription: '2-3 x 10-15' },
+  ],
+};
+
+const DEFAULT_WORKOUT_PROGRESSION = [
+  'First 2 weeks: stay conservative and nail the pattern',
+  'When all sets hit the top of the rep range, add weight next time',
+  'Poor sleep or bad recovery: keep the load, cut to minimum sets',
+  'Missed days: do not double up; continue with the next scheduled day',
+];
+
 export function getWorkout(weekdayIndex: number): WorkoutData {
   return WORKOUT_MAP[weekdayIndex] ?? { name: 'REST', anchor: '', isRest: true };
+}
+
+function stripMarkdown(value: string): string {
+  return value
+    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
+    .replace(/\[\[([^\]]+)\]\]/g, '$1')
+    .replace(/\*\*/g, '')
+    .replace(/`/g, '')
+    .trim();
+}
+
+function extractSection(markdown: string, heading: string): string {
+  const lines = markdown.split('\n');
+  const start = lines.findIndex(line => line.trim() === `## ${heading}`);
+  if (start === -1) return '';
+  const end = lines.findIndex((line, index) => index > start && line.startsWith('## '));
+  return lines.slice(start + 1, end === -1 ? undefined : end).join('\n').trim();
+}
+
+function extractListItems(markdown: string): string[] {
+  return markdown
+    .split('\n')
+    .map(line => line.replace(/^\s*[-*]\s+/, '').replace(/^\s*\d+\.\s+/, '').trim())
+    .filter(line => line.length > 0 && !line.startsWith('|') && !line.startsWith('#'))
+    .map(stripMarkdown);
+}
+
+export function enrichWorkout(workout: WorkoutData, programContent: string | null): WorkoutData {
+  const fallbackTemplate = [
+    '3-5 min warm-up',
+    '10-12 min main lift',
+    '10-12 min on 2 assistance movements',
+    'Stop at 20-30 min',
+    'Leave 1-2 reps in reserve',
+  ];
+
+  if (!programContent || workout.isRest) {
+    return {
+      ...workout,
+      duration: workout.isRest ? 'Office rest day' : '20-30 min',
+      template: workout.isRest ? ['No lifting decision needed today', 'Keep the reset anchors intact'] : fallbackTemplate,
+      exercises: STATIC_WORKOUTS[workout.name] ?? [],
+      progression: workout.isRest ? [] : DEFAULT_WORKOUT_PROGRESSION,
+    };
+  }
+
+  const section = workout.anchor ? extractSection(programContent, workout.anchor) : '';
+  const exercises = extractListItems(section).map(item => {
+    const [name, ...rest] = item.split(' — ');
+    return { name: name.trim(), prescription: rest.join(' — ').trim() };
+  });
+
+  return {
+    ...workout,
+    duration: '20-30 min',
+    template: extractListItems(extractSection(programContent, 'Session Template')).slice(0, 5),
+    exercises,
+    progression: extractListItems(extractSection(programContent, 'Progression')).slice(0, 4),
+  };
 }
 
 const PT_SESSION_MAP: Record<number, { number: number | null; title: string; isRest: boolean }> = {
@@ -111,7 +233,111 @@ const PT_SESSION_MAP: Record<number, { number: number | null; title: string; isR
   0: { number: null, title: 'Sunday — weekly prep', isRest: true },
 };
 
-export function parsePTData(weekdayIndex: number, weekKey: string, lessonContent: string | null): PortugueseData {
+const DEFAULT_DAILY_ANCHORS = [
+  'CI Intake — 30 min/day: podcast, music, BR show, or YouTube',
+  'SR — 5 min/day: clear due cards only',
+  'Extensive reading — 10 min/day of parallel-text stories',
+  'Shadowing — 5 min/day during the post-lunch walk',
+];
+
+const DEFAULT_PT_TASKS: Record<number, SessionTask[]> = {
+  1: [
+    { title: 'Comprehensible Input', minutes: '10 min', details: ['Watch or listen once for meaning', 'Second pass: write down words or patterns you notice'] },
+    { title: 'Pattern Extraction', minutes: '10 min', details: ['Extract the rule from real examples before reading grammar', 'Say each example aloud'] },
+    { title: 'Production', minutes: '10 min', details: ['Answer prompts aloud before checking', 'Log misses to the error log'] },
+  ],
+  2: [
+    { title: 'Deep SR Review', minutes: '10 min', details: ['Clear all due cards first', 'Review aloud, not silently', 'Mark repeated failures as leeches'] },
+    { title: 'Chunk Drilling', minutes: '15 min', details: ['Drill five phrase chunks front to back', 'Say the whole chunk as one unit'] },
+    { title: 'Error-Log Review', minutes: '5 min', details: ['Review recurring errors before output day'] },
+  ],
+  3: [
+    { title: 'Warm-up', minutes: '5 min', details: ['Start with a short spoken prompt'] },
+    { title: 'Free Conversation', minutes: '20 min', details: ['Portuguese only as much as possible', 'Ask for corrections in real time'] },
+    { title: 'Error Capture', minutes: '5 min', details: ['Ask for a list of mistakes and save them'] },
+  ],
+  4: [
+    { title: 'Mixed Cloze', minutes: '10 min', details: ['Mix the last three weeks instead of blocking one topic'] },
+    { title: 'Weak-Point Drill', minutes: '10 min', details: ['Drill known errors directly'] },
+    { title: 'Mini-Probe', minutes: '10 min', details: ['Speak or write 5-6 sentences and score accuracy'] },
+  ],
+};
+
+const DEFAULT_CUE_CARDS: CueCard[] = [
+  { front: 'Me chamo...', back: 'My name is...', tag: 'Intro' },
+  { front: 'Sou canadense.', back: "I'm Canadian. Drop eu unless needed.", tag: 'Intro' },
+  { front: 'Moro em Markham.', back: 'I live in Markham. Use morar for residence.', tag: 'Verb' },
+  { front: 'Tudo bem?', back: 'How are you? / Everything good?', tag: 'Phrase' },
+  { front: 'Tudo ótimo. E você?', back: 'Everything great. And you?', tag: 'Phrase' },
+  { front: 'converso com Joey', back: 'I talk with Joey.', tag: 'Chunk' },
+  { front: 'andamos no parque', back: 'We walk in the park.', tag: 'Chunk' },
+  { front: 'ela canta baixinho', back: 'She sings softly.', tag: 'Chunk' },
+  { front: 'procuramos a chave', back: 'We look for the key.', tag: 'Chunk' },
+  { front: 'explico devagar', back: 'I explain slowly.', tag: 'Chunk' },
+];
+
+function getSessionSection(lessonContent: string, sessionNumber: number | null): string {
+  if (!lessonContent || !sessionNumber) return '';
+  const lines = lessonContent.split('\n');
+  const start = lines.findIndex(line => line.startsWith(`## Session ${sessionNumber}`));
+  if (start === -1) return '';
+  const end = lines.findIndex((line, index) => index > start && line.startsWith('## '));
+  return lines.slice(start, end === -1 ? undefined : end).join('\n').trim();
+}
+
+function parseSessionTasks(sessionContent: string): SessionTask[] {
+  const lines = sessionContent.split('\n');
+  const headingIndexes = lines
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => /^### \d+\./.test(line));
+
+  return headingIndexes.map(({ line, index }, headingIndex) => {
+    const next = headingIndexes[headingIndex + 1]?.index ?? lines.length;
+    const title = stripMarkdown(line.replace(/^### \d+\.\s*/, ''));
+    const minutes = title.match(/\(([^)]+min)\)/i)?.[1] ?? '';
+    const details = extractListItems(lines.slice(index + 1, next).join('\n')).slice(0, 8);
+    return { title: title.replace(/\s*\([^)]+min\)/i, ''), minutes, details };
+  });
+}
+
+function parseCueCards(sessionContent: string): CueCard[] {
+  const cards: CueCard[] = [];
+
+  const vocab = sessionContent.match(/\*\*New vocab seeded this session \(\d+\):\*\*\s*([^.\n]+)\.?/);
+  if (vocab) {
+    vocab[1].split(',').forEach(word => {
+      const clean = stripMarkdown(word);
+      if (clean) cards.push({ front: clean, back: 'Say it aloud, give the English meaning, then make one sentence.', tag: 'Vocab' });
+    });
+  }
+
+  const sessionLines = sessionContent.split('\n');
+  const chunkStart = sessionLines.findIndex(line => line.trim().startsWith('| Chunk | Meaning |'));
+  const chunkLines = chunkStart === -1
+    ? []
+    : sessionLines.slice(chunkStart).filter(line => line.trim().startsWith('|'));
+  chunkLines.forEach(line => {
+    const cells = line.split('|').map(cell => stripMarkdown(cell)).filter(Boolean);
+    if (cells.length === 2 && cells[0] !== 'Chunk' && !cells[0].startsWith('---')) {
+      cards.push({ front: cells[0], back: cells[1], tag: 'Chunk' });
+    }
+  });
+
+  const clozeLines = Array.from(sessionContent.matchAll(/^\d+\.\s+(.+?)→\s*(.+)$/gm));
+  clozeLines.forEach(match => {
+    cards.push({ front: stripMarkdown(match[1]), back: stripMarkdown(match[2]), tag: 'Cloze' });
+  });
+
+  return cards.slice(0, 24);
+}
+
+export function parsePTData(
+  weekdayIndex: number,
+  weekKey: string,
+  lessonContent: string | null,
+  lessonStatus: 'current' | 'fallback' | 'missing' = 'current',
+  methodContent: string | null = null,
+): PortugueseData {
   const session = PT_SESSION_MAP[weekdayIndex] ?? PT_SESSION_MAP[5];
 
   // Extract stories
@@ -137,6 +363,17 @@ export function parsePTData(weekdayIndex: number, weekKey: string, lessonContent
   const weekAnchor = sessionNum && lessonContent
     ? (lessonContent.match(new RegExp(`#+ (Session ${sessionNum}[^\\n]+)`))?.[1] ?? '')
     : '';
+  const weekTarget = lessonContent
+    ? stripMarkdown(lessonContent.match(/## Week Target\s*\n+([\s\S]*?)(?=\n## )/)?.[1]?.split('\n').find(line => line.trim().length > 0) ?? '')
+    : '';
+  const successCriteria = lessonContent
+    ? extractListItems(lessonContent.match(/\*\*Success criteria by Thu:\*\*([\s\S]*?)(?=\n## |\n### )/)?.[1] ?? '').slice(0, 4)
+    : [];
+  const sessionContent = getSessionSection(lessonContent ?? '', session.number);
+  const methodAnchors = methodContent?.match(/\*\*Daily anchors[\s\S]*?(?=\n\n\*\*Weekly card budget)/)?.[0] ?? '';
+  const dailyAnchors = extractListItems(methodAnchors).slice(0, 4);
+  const sessionTasks = parseSessionTasks(sessionContent);
+  const cueCards = parseCueCards(sessionContent);
 
   return {
     sessionNumber: session.number,
@@ -145,6 +382,12 @@ export function parsePTData(weekdayIndex: number, weekKey: string, lessonContent
     stories,
     weekKey,
     weekAnchor,
+    lessonStatus,
+    weekTarget,
+    successCriteria,
+    dailyAnchors: dailyAnchors.length > 0 ? dailyAnchors : DEFAULT_DAILY_ANCHORS,
+    sessionTasks: session.number && sessionTasks.length > 0 ? sessionTasks : session.number ? DEFAULT_PT_TASKS[session.number] ?? [] : [],
+    cueCards: cueCards.length > 0 ? cueCards : DEFAULT_CUE_CARDS,
   };
 }
 
