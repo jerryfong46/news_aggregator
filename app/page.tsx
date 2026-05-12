@@ -371,6 +371,9 @@ export default function Dashboard() {
   const learnedWords = baselineKnownCount + novelProgressEntries.length;
   const masteredWords = baselineKnownCount + novelProgressEntries.filter(([, value]) => value.learned || value.rating === 'easy').length;
   const learnedToday = novelProgressEntries.filter(([, value]) => value.reviewedAt?.startsWith(todayIso)).length;
+  const learnedNovelCards = vocabCards
+    .filter(card => (progress[cardId(card)]?.learned || progress[cardId(card)]?.rating === 'easy') && !isKnownFrequencyCard(card, frequency))
+    .sort((a, b) => cardFrequencyRank(a, frequency) - cardFrequencyRank(b, frequency) || a.front.localeCompare(b.front));
   const hardCards = portuguese.cueCards
     .filter(card => ['again', 'hard'].includes(progress[cardId(card)]?.rating ?? ''))
     .filter(card => card.tag !== 'Vocab' || !isKnownFrequencyCard(card, frequency))
@@ -564,6 +567,23 @@ export default function Dashboard() {
                 <div><span>Baseline</span><strong>{baselineKnownCount}</strong></div>
                 <div><span>Learned</span><strong>{learnedWords}</strong></div>
                 <div><span>Mastered</span><strong>{masteredWords}</strong></div>
+              </div>
+              <div className="pt-word-group">
+                <div className="pt-word-group-label">Learned on this device</div>
+                {learnedNovelCards.length > 0 ? (
+                  <div className="chip-row">
+                    {learnedNovelCards.map(card => {
+                      const rank = cardFrequencyRank(card, frequency);
+                      return (
+                        <Chip key={cardId(card)} color="green">
+                          {Number.isFinite(rank) ? `${rank}. ` : ''}{card.front}
+                        </Chip>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="muted">No new learned words logged yet on this device.</p>
+                )}
               </div>
               {frequencyNextWords.length > 0 && (
                 <div className="chip-row">

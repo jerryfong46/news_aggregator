@@ -202,6 +202,7 @@ function stripMarkdown(value: string): string {
     .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
     .replace(/\[\[([^\]]+)\]\]/g, '$1')
     .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
     .replace(/`/g, '')
     .trim();
 }
@@ -403,11 +404,22 @@ function parseSessionTasks(sessionContent: string): SessionTask[] {
   });
 }
 
-function parseCueCards(sessionContent: string): CueCard[] {
+function parseCueCards(sessionContent: string, frequency: FrequencyData | null = null): CueCard[] {
   const vocabCards: CueCard[] = [];
   const chunkCards: CueCard[] = [];
   const clozeCards: CueCard[] = [];
   const wordTranslations: Record<string, string> = {};
+  const frequencyMeaningByWord: Record<string, string> = {};
+  frequency?.entries.forEach(entry => {
+    entry.word.split('/').forEach(part => {
+      part.split(',').forEach(piece => {
+        const key = normalizeFrequencyTerm(piece);
+        if (key && !frequencyMeaningByWord[key]) {
+          frequencyMeaningByWord[key] = entry.meaning;
+        }
+      });
+    });
+  });
 
   // Parse chunk table first so we can cross-reference vocab
   const sessionLines = sessionContent.split('\n');
@@ -440,7 +452,7 @@ function parseCueCards(sessionContent: string): CueCard[] {
       } else if (dashMatch) {
         vocabCards.push({ front: dashMatch[1].trim(), back: dashMatch[2].trim(), tag: 'Vocab' });
       } else {
-        const translation = wordTranslations[clean.toLowerCase()];
+        const translation = wordTranslations[clean.toLowerCase()] ?? frequencyMeaningByWord[normalizeFrequencyTerm(clean)];
         vocabCards.push({ front: clean, back: translation ?? 'Recall the meaning aloud.', tag: 'Vocab' });
       }
     });
@@ -489,8 +501,8 @@ export function parsePTData(
   const methodAnchors = methodContent?.match(/\*\*Daily anchors[\s\S]*?(?=\n\n\*\*Weekly card budget)/)?.[0] ?? '';
   const dailyAnchors = extractListItems(methodAnchors).slice(0, 4);
   const sessionTasks = parseSessionTasks(sessionContent);
-  const cueCards = parseCueCards(sessionContent);
   const frequency = parseFrequencyMasterList(frequencyContent);
+  const cueCards = parseCueCards(sessionContent, frequency);
 
   return {
     sessionNumber: session.number,
