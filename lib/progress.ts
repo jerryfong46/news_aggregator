@@ -67,9 +67,10 @@ export async function getProgressEvents(date: string): Promise<ProgressEvent[]> 
 }
 
 export function summarizeDailyEvents(date: string, events: ProgressEvent[]): DailyExport {
-  const reviews = events.filter((event): event is Extract<ProgressEvent, { type: 'pt_card_review' }> => event.type === 'pt_card_review');
-  const completed = events.filter((event): event is Extract<ProgressEvent, { type: 'workout_completed' }> => event.type === 'workout_completed');
-  const lifts = events.filter((event): event is Extract<ProgressEvent, { type: 'workout_lift' }> => event.type === 'workout_lift');
+  const exportableEvents = events.filter(event => event.type !== 'pt_card_review' || !event.cardId.startsWith('test:'));
+  const reviews = exportableEvents.filter((event): event is Extract<ProgressEvent, { type: 'pt_card_review' }> => event.type === 'pt_card_review');
+  const completed = exportableEvents.filter((event): event is Extract<ProgressEvent, { type: 'workout_completed' }> => event.type === 'workout_completed');
+  const lifts = exportableEvents.filter((event): event is Extract<ProgressEvent, { type: 'workout_lift' }> => event.type === 'workout_lift');
 
   const latestByCard = new Map<string, Extract<ProgressEvent, { type: 'pt_card_review' }>>();
   reviews.forEach(review => latestByCard.set(review.cardId, review));
@@ -77,7 +78,7 @@ export function summarizeDailyEvents(date: string, events: ProgressEvent[]): Dai
 
   return {
     date,
-    events,
+    events: exportableEvents,
     pt: {
       reviews,
       learned: latestReviews.filter(review => review.learned || review.rating === 'easy'),
@@ -86,4 +87,3 @@ export function summarizeDailyEvents(date: string, events: ProgressEvent[]): Dai
     workout: { completed, lifts },
   };
 }
-
