@@ -26,6 +26,14 @@ export async function fetchDashboard(): Promise<string | null> {
   return githubFetch('Journal/Dashboard.md');
 }
 
+export async function fetchAttentionResetOverview(): Promise<string | null> {
+  return githubFetch('Areas/Attention Reset/Attention Reset Overview.md');
+}
+
+export async function fetchAttentionResetDailyLog(): Promise<string | null> {
+  return githubFetch('Areas/Attention Reset/Daily Log.md');
+}
+
 export async function fetchWeeklyLesson(weekKey: string): Promise<string | null> {
   return githubFetch(`Resources/Portuguese/Weekly Lessons/${weekKey}.md`);
 }

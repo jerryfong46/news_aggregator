@@ -68,6 +68,21 @@ button { cursor: pointer; }
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .pt-word-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
 .pt-word-group-label { color: var(--muted); font-size: 11px; font-weight: 850; letter-spacing: 0.08em; text-transform: uppercase; }
+.reset-kpis { margin-bottom: 10px; }
+.reset-kpis div { display: flex; flex-direction: column; gap: 4px; }
+.reset-kpis small { color: var(--muted); font-size: 10px; line-height: 1.2; }
+.reset-rows { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.reset-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 11px;
+  background: rgba(244, 234, 214, 0.06);
+}
+.reset-row strong { font-size: 13px; letter-spacing: -0.02em; }
+.reset-row span { color: var(--muted); font-size: 12px; line-height: 1.35; }
 
 .btn-refresh-sm {
   border: 1px solid var(--line);

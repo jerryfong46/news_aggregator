@@ -10,6 +10,38 @@ interface CueCardData { front: string; back: string; tag: string; frontExample?:
 interface StoryData { title: string; englishTitle: string; newVocab: string; rows: { pt: string; en: string }[]; questions: string[] }
 interface FrequencyEntry { rank: number; word: string; meaning: string; status: string; notes: string; known: boolean }
 interface FrequencyData { baselineKnownCount: number; knownCount: number; nextWords: FrequencyEntry[]; entries: FrequencyEntry[]; rankByWord: Record<string, number>; knownByWord: Record<string, boolean> }
+interface AttentionResetRow {
+  date: string;
+  totalScreenTimeLabel: string;
+  totalScreenTimeMin: number | null;
+  twitterMin: number | null;
+  youtubeMin: number | null;
+  pickups: number | null;
+  phoneFreeWorkout: string;
+  replacementMin: number | null;
+  meditate: string;
+  sunlight: string;
+  sleep7: string;
+  focus: number | null;
+  notes: string;
+}
+interface AttentionResetSummary {
+  latest?: AttentionResetRow;
+  rows: AttentionResetRow[];
+  avgTotalScreenTimeMin: number | null;
+  avgTwitterMin: number | null;
+  avgYouTubeMin: number | null;
+  avgPickups: number | null;
+  avgReplacementMin: number | null;
+  avgFocus: number | null;
+  phoneFreeWorkoutRate: number | null;
+  logDays: number;
+  targetWeek: number;
+  targetScreenTimeMin: number;
+  targetTwitterMin: number;
+  targetYouTubeMin: number;
+  targetPickups: number;
+}
 type CardRating = 'again' | 'hard' | 'easy';
 interface CardProgress { rating: CardRating; reviewedAt: string; learned?: boolean }
 type ProgressMap = Record<string, CardProgress>;
@@ -38,6 +70,7 @@ interface DashboardData {
     cueCards: CueCardData[];
     frequency: FrequencyData;
   };
+  attentionReset: AttentionResetSummary;
   digest: { date: string; totalTweets: number; newsArticles: number; sections: { heading: string; emoji: string; items: string[] }[]; sourceDate?: string; isFallback?: boolean } | null;
   openItems: { overdue: string[]; dueThisWeek: string[]; p0s: string[]; daycareCount: number } | null;
 }
@@ -61,6 +94,14 @@ function Chip({ children, color = 'default' }: { children: React.ReactNode; colo
 
 function CheckRow({ children }: { children: React.ReactNode }) {
   return <label className="check-row"><input type="checkbox" /> <span>{children}</span></label>;
+}
+
+function formatMinutes(value: number | null) {
+  if (value === null || Number.isNaN(value)) return '—';
+  if (value < 60) return `${Math.round(value)}m`;
+  const hours = Math.floor(value / 60);
+  const minutes = Math.round(value % 60);
+  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
 }
 
 function cardId(card: CueCardData) {
@@ -368,7 +409,7 @@ export default function Dashboard() {
     return <div className="loading"><p className="error">Failed to load dashboard.</p><button className="btn-refresh" onClick={load}>Retry</button></div>;
   }
 
-  const { date, reset, joey, weather, workout, transit, portuguese, digest, openItems } = data;
+  const { date, reset, attentionReset, joey, weather, workout, transit, portuguese, digest, openItems } = data;
   const overdueCount = (openItems?.overdue.length ?? 0) + (openItems?.p0s.length ?? 0);
   const todayIso = new Date().toLocaleDateString('en-CA');
   const frequency = portuguese.frequency;
@@ -696,15 +737,46 @@ export default function Dashboard() {
         )}
 
         {activeTab === 'week' && (
-          <Card>
-            <SectionLabel eyebrow="Open" title="This Week" />
-            {!openItems && <p className="muted">Dashboard items unavailable until GITHUB_PAT is configured.</p>}
-            {openItems?.p0s.map(item => <div key={item} className="item-row item-p0">{item}</div>)}
-            {openItems?.overdue.map(item => <div key={item} className="item-row item-overdue">{item}</div>)}
-            {openItems?.dueThisWeek.map(item => <div key={item} className="item-row item-due">{item}</div>)}
-            {!!openItems?.daycareCount && <div className="item-row item-info">{openItems.daycareCount} daycare items open</div>}
-            {openItems && overdueCount === 0 && openItems.dueThisWeek.length === 0 && <p className="muted">All clear this week.</p>}
-          </Card>
+          <>
+            <Card>
+              <SectionLabel eyebrow="Attention" title="Reset Scorecard" />
+              <p className="lead">
+                Week {attentionReset.targetWeek} target: keep pickups and screen time down, and make the phone less sticky.
+              </p>
+              <div className="kpi-grid reset-kpis">
+                <div><span>Screen time</span><strong>{formatMinutes(attentionReset.avgTotalScreenTimeMin)}</strong><small>target {formatMinutes(attentionReset.targetScreenTimeMin)}</small></div>
+                <div><span>Pickups</span><strong>{attentionReset.avgPickups !== null ? Math.round(attentionReset.avgPickups) : '—'}</strong><small>target ≤ {attentionReset.targetPickups}</small></div>
+                <div><span>Twitter</span><strong>{formatMinutes(attentionReset.avgTwitterMin)}</strong><small>target {formatMinutes(attentionReset.targetTwitterMin)}</small></div>
+              </div>
+              <div className="kpi-grid reset-kpis">
+                <div><span>YouTube</span><strong>{formatMinutes(attentionReset.avgYouTubeMin)}</strong><small>target {formatMinutes(attentionReset.targetYouTubeMin)}</small></div>
+                <div><span>Workout</span><strong>{attentionReset.phoneFreeWorkoutRate !== null ? `${Math.round(attentionReset.phoneFreeWorkoutRate * 100)}%` : '—'}</strong><small>phone-free</small></div>
+                <div><span>Focus</span><strong>{attentionReset.avgFocus ? attentionReset.avgFocus.toFixed(1) : '—'}</strong><small>self-rated</small></div>
+              </div>
+              {attentionReset.rows.length > 0 ? (
+                <div className="reset-rows">
+                  {attentionReset.rows.map(row => (
+                    <div className="reset-row" key={row.date}>
+                      <strong>{row.date}</strong>
+                      <span>{formatMinutes(row.totalScreenTimeMin)} total · {formatMinutes(row.twitterMin)} X · {formatMinutes(row.youtubeMin)} YT · {row.pickups ?? '—'} pickups</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="muted">No Attention Reset log rows found yet.</p>
+              )}
+            </Card>
+
+            <Card>
+              <SectionLabel eyebrow="Open" title="This Week" />
+              {!openItems && <p className="muted">Dashboard items unavailable until GITHUB_PAT is configured.</p>}
+              {openItems?.p0s.map(item => <div key={item} className="item-row item-p0">{item}</div>)}
+              {openItems?.overdue.map(item => <div key={item} className="item-row item-overdue">{item}</div>)}
+              {openItems?.dueThisWeek.map(item => <div key={item} className="item-row item-due">{item}</div>)}
+              {!!openItems?.daycareCount && <div className="item-row item-info">{openItems.daycareCount} daycare items open</div>}
+              {openItems && overdueCount === 0 && openItems.dueThisWeek.length === 0 && <p className="muted">All clear this week.</p>}
+            </Card>
+          </>
         )}
       </main>
     </div>

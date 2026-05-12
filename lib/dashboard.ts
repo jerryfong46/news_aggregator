@@ -105,6 +105,40 @@ export interface OpenItems {
   daycareCount: number;
 }
 
+export interface AttentionResetRow {
+  date: string;
+  totalScreenTimeLabel: string;
+  totalScreenTimeMin: number | null;
+  twitterMin: number | null;
+  youtubeMin: number | null;
+  pickups: number | null;
+  phoneFreeWorkout: string;
+  replacementMin: number | null;
+  meditate: string;
+  sunlight: string;
+  sleep7: string;
+  focus: number | null;
+  notes: string;
+}
+
+export interface AttentionResetSummary {
+  latest?: AttentionResetRow;
+  rows: AttentionResetRow[];
+  avgTotalScreenTimeMin: number | null;
+  avgTwitterMin: number | null;
+  avgYouTubeMin: number | null;
+  avgPickups: number | null;
+  avgReplacementMin: number | null;
+  avgFocus: number | null;
+  phoneFreeWorkoutRate: number | null;
+  logDays: number;
+  targetWeek: number;
+  targetScreenTimeMin: number;
+  targetTwitterMin: number;
+  targetYouTubeMin: number;
+  targetPickups: number;
+}
+
 export interface DateInfo {
   iso: string;
   display: string;
@@ -233,6 +267,90 @@ function extractListItems(markdown: string): string[] {
     .map(line => line.replace(/^\s*[-*]\s+/, '').replace(/^\s*\d+\.\s+/, '').trim())
     .filter(line => line.length > 0 && !line.startsWith('|') && !line.startsWith('#'))
     .map(stripMarkdown);
+}
+
+function parseNumberField(value: string): number | null {
+  const cleaned = stripMarkdown(value);
+  if (!cleaned || cleaned === '—' || cleaned === '-') return null;
+  const match = cleaned.match(/(\d+(?:\.\d+)?)/);
+  return match ? Number.parseFloat(match[1]) : null;
+}
+
+function parseBoolish(value: string): boolean {
+  const cleaned = stripMarkdown(value).toLowerCase();
+  return cleaned === 'yes' || cleaned === 'y' || cleaned === 'true' || cleaned === '1' || cleaned === 'done' || cleaned.includes('✓');
+}
+
+export function parseAttentionResetDailyLog(content: string | null, targetWeek: number): AttentionResetSummary {
+  const rows: AttentionResetRow[] = [];
+  if (content) {
+    content.split('\n').forEach(line => {
+      if (!line.startsWith('| 20')) return;
+      const cells = line.split('|').map(cell => stripMarkdown(cell));
+      if (cells.length < 12) return;
+      const [
+        ,
+        date,
+        totalScreenTimeLabel,
+        twitterMin,
+        youtubeMin,
+        pickups,
+        phoneFreeWorkout,
+        replacementMin,
+        meditate,
+        sunlight,
+        sleep7,
+        focus,
+        notes,
+      ] = cells;
+      rows.push({
+        date,
+        totalScreenTimeLabel,
+        totalScreenTimeMin: parseNumberField(totalScreenTimeLabel),
+        twitterMin: parseNumberField(twitterMin),
+        youtubeMin: parseNumberField(youtubeMin),
+        pickups: parseNumberField(pickups),
+        phoneFreeWorkout,
+        replacementMin: parseNumberField(replacementMin),
+        meditate,
+        sunlight,
+        sleep7,
+        focus: parseNumberField(focus),
+        notes,
+      });
+    });
+  }
+
+  const sample = rows.slice(0, 7);
+  const sum = (values: Array<number | null>) => {
+    const nums = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    return nums.length > 0 ? nums.reduce((acc, value) => acc + value, 0) / nums.length : null;
+  };
+
+  const phoneFreeDays = sample.filter(row => parseBoolish(row.phoneFreeWorkout));
+  const week = Math.min(Math.max(targetWeek, 1), 4);
+  const targetScreenTimeMin = [300, 180, 120, 90][week - 1];
+  const targetTwitterMin = [45, 30, 30, 0][week - 1];
+  const targetYouTubeMin = [45, 30, 30, 30][week - 1];
+  const targetPickups = [80, 60, 40, 40][week - 1];
+
+  return {
+    latest: sample[0],
+    rows: sample,
+    avgTotalScreenTimeMin: sum(sample.map(row => row.totalScreenTimeMin)),
+    avgTwitterMin: sum(sample.map(row => row.twitterMin)),
+    avgYouTubeMin: sum(sample.map(row => row.youtubeMin)),
+    avgPickups: sum(sample.map(row => row.pickups)),
+    avgReplacementMin: sum(sample.map(row => row.replacementMin)),
+    avgFocus: sum(sample.map(row => row.focus)),
+    phoneFreeWorkoutRate: sample.length > 0 ? phoneFreeDays.length / sample.length : null,
+    logDays: rows.length,
+    targetWeek: week,
+    targetScreenTimeMin,
+    targetTwitterMin,
+    targetYouTubeMin,
+    targetPickups,
+  };
 }
 
 export function parseFrequencyMasterList(content: string | null): FrequencyData {

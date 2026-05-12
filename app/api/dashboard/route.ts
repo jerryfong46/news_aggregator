@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
   fetchDashboard,
+  fetchAttentionResetDailyLog,
   fetchDigest,
   fetchPortugueseFrequencyMasterList,
   fetchPortugueseMethod,
@@ -12,6 +13,7 @@ import {
   getDateInfo, getWeekKey, getAttentionReset,
   getWorkout, parsePTData, fetchWeather,
   parseDigest, parseOpenItems, getJoeyWeight, enrichWorkout, parseStoryMarkdown, enrichCueCardExamples,
+  parseAttentionResetDailyLog,
 } from '@/lib/dashboard';
 
 export const revalidate = 300;
@@ -30,6 +32,7 @@ export async function GET() {
     digestRaw,
     yesterdayDigestRaw,
     dashboardRaw,
+    attentionResetLogRaw,
     lessonRaw,
     previousLessonRaw,
     workoutProgramRaw,
@@ -40,6 +43,7 @@ export async function GET() {
     fetchDigest(dateInfo.iso),
     fetchDigest(yesterdayInfo.iso),
     fetchDashboard(),
+    fetchAttentionResetDailyLog(),
     fetchWeeklyLesson(weekKey),
     fetchWeeklyLesson(previousWeekKey),
     fetchWorkoutProgram(),
@@ -64,10 +68,12 @@ export async function GET() {
       : null;
   const openItems = dashboardRaw ? parseOpenItems(dashboardRaw, dateInfo.iso) : null;
   const joeyWeight = dashboardRaw ? getJoeyWeight(dashboardRaw) : '5.345 kg';
+  const attentionReset = parseAttentionResetDailyLog(attentionResetLogRaw, reset.day);
 
   return NextResponse.json({
     date: dateInfo,
     reset,
+    attentionReset,
     joey: { weight: joeyWeight },
     weather: weatherData,
     workout,
