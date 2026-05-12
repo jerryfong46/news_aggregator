@@ -3,13 +3,14 @@ import {
   fetchDashboard,
   fetchDigest,
   fetchPortugueseMethod,
+  fetchPortugueseStory,
   fetchWeeklyLesson,
   fetchWorkoutProgram,
 } from '@/lib/github';
 import {
   getDateInfo, getWeekKey, getAttentionReset,
   getWorkout, parsePTData, fetchWeather,
-  parseDigest, parseOpenItems, getJoeyWeight, enrichWorkout,
+  parseDigest, parseOpenItems, getJoeyWeight, enrichWorkout, parseStoryMarkdown,
 } from '@/lib/dashboard';
 
 export const revalidate = 300;
@@ -41,7 +42,12 @@ export async function GET() {
 
   const lessonForUi = lessonRaw ?? previousLessonRaw;
   const lessonStatus = lessonRaw ? 'current' : previousLessonRaw ? 'fallback' : 'missing';
-  const portuguese = parsePTData(dateInfo.weekdayIndex, weekKey, lessonForUi, lessonStatus, portugueseMethodRaw);
+  const portugueseBase = parsePTData(dateInfo.weekdayIndex, weekKey, lessonForUi, lessonStatus, portugueseMethodRaw);
+  const storyContents = await Promise.all(portugueseBase.stories.map(story => fetchPortugueseStory(story.title)));
+  const portuguese = {
+    ...portugueseBase,
+    stories: portugueseBase.stories.map((story, index) => parseStoryMarkdown(story.title, storyContents[index])),
+  };
   const workout = enrichWorkout(getWorkout(dateInfo.weekdayIndex), workoutProgramRaw);
   const digest = digestRaw ? parseDigest(digestRaw, dateInfo.iso) : null;
   const openItems = dashboardRaw ? parseOpenItems(dashboardRaw, dateInfo.iso) : null;

@@ -41,3 +41,7 @@ export async function fetchPortugueseMethod(): Promise<string | null> {
 export async function fetchSRReview(): Promise<string | null> {
   return githubFetch('Resources/Portuguese/SR Review.md');
 }
+
+export async function fetchPortugueseStory(title: string): Promise<string | null> {
+  return githubFetch(`Resources/Portuguese/Stories/${title}.md`);
+}

@@ -1,5 +1,6 @@
 export interface WeatherData {
   temp: string;
+  high: string;
   feelsLike: string;
   desc: string;
   precip: string;
@@ -23,7 +24,7 @@ export interface PortugueseData {
   sessionNumber: number | null;
   sessionTitle: string;
   isRest: boolean;
-  stories: string[];
+  stories: StoryData[];
   weekKey: string;
   weekAnchor: string;
   lessonStatus: 'current' | 'fallback' | 'missing';
@@ -59,6 +60,19 @@ export interface CueCard {
   front: string;
   back: string;
   tag: string;
+}
+
+export interface StoryData {
+  title: string;
+  englishTitle: string;
+  newVocab: string;
+  rows: StoryRow[];
+  questions: string[];
+}
+
+export interface StoryRow {
+  pt: string;
+  en: string;
 }
 
 export interface OpenItems {
@@ -276,6 +290,23 @@ const DEFAULT_CUE_CARDS: CueCard[] = [
   { front: 'explico devagar', back: 'I explain slowly.', tag: 'Chunk' },
 ];
 
+const DEFAULT_STORY_TITLES = [
+  'O Patinho Feio',
+  'Pinóquio e a Luz',
+  'A Pequena Sereia',
+  'Branca de Neve',
+  'Rapunzel na Torre',
+  'Rute e Noemi',
+  'Zaqueu na Árvore',
+  'Jesus Acalma a Tempestade',
+  'O Filho Perdido',
+  'Ester e o Rei',
+];
+
+function emptyStory(title: string): StoryData {
+  return { title, englishTitle: '', newVocab: '', rows: [], questions: [] };
+}
+
 function getSessionSection(lessonContent: string, sessionNumber: number | null): string {
   if (!lessonContent || !sessionNumber) return '';
   const lines = lessonContent.split('\n');
@@ -341,21 +372,13 @@ export function parsePTData(
   const session = PT_SESSION_MAP[weekdayIndex] ?? PT_SESSION_MAP[5];
 
   // Extract stories
-  const stories: string[] = [];
+  let storyTitles: string[] = [];
   if (lessonContent) {
     const storiesSection = lessonContent.match(/## This Week's Stories[\s\S]*?(?=##|$)/)?.[0] ?? '';
-    const storyLinks = Array.from(storiesSection.matchAll(/\[\[([^\]]+)\]\]/g)).map(m => {
+    storyTitles = Array.from(storiesSection.matchAll(/\[\[([^\]]+)\]\]/g)).map(m => {
       const parts = m[1].split('|');
       return parts[parts.length - 1].replace('Stories/', '').trim();
     });
-
-    // Pick 2 stories using weekday rotation (Mon=0)
-    const i = weekdayIndex === 0 ? 1 : (weekdayIndex === 6 ? 0 : (weekdayIndex - 1) % 5);
-    const n = storyLinks.length;
-    if (n > 0) {
-      stories.push(storyLinks[(i * 2) % n]);
-      if (n > 1) stories.push(storyLinks[(i * 2 + 1) % n]);
-    }
   }
 
   // Week anchor for session link
@@ -379,7 +402,7 @@ export function parsePTData(
     sessionNumber: session.number,
     sessionTitle: session.title,
     isRest: session.isRest,
-    stories,
+    stories: (storyTitles.length > 0 ? storyTitles : DEFAULT_STORY_TITLES).map(emptyStory),
     weekKey,
     weekAnchor,
     lessonStatus,
@@ -391,6 +414,28 @@ export function parsePTData(
   };
 }
 
+export function parseStoryMarkdown(title: string, content: string | null): StoryData {
+  if (!content) return emptyStory(title);
+
+  const lines = content.split('\n');
+  const englishTitle = lines.find((line, index) => index > 0 && line.startsWith('# '))?.replace(/^#\s+/, '').trim() ?? '';
+  const newVocab = stripMarkdown(content.match(/New vocab:\s*(.+)$/m)?.[1] ?? '');
+  const rows: StoryRow[] = [];
+  const questions: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith('| ') && !line.includes('---') && !line.includes('Português')) {
+      const cells = line.split('|').map(cell => stripMarkdown(cell)).filter(Boolean);
+      if (cells.length >= 2 && cells[0]) rows.push({ pt: cells[0], en: cells[1] });
+    }
+
+    const question = line.match(/^\d+\.\s+(.+)$/)?.[1];
+    if (question) questions.push(stripMarkdown(question));
+  }
+
+  return { title, englishTitle, newVocab, rows, questions };
+}
+
 export async function fetchWeather(): Promise<WeatherData | null> {
   try {
     const res = await fetch('https://wttr.in/Richmond+Hill+Ontario?format=j1', {
@@ -399,6 +444,7 @@ export async function fetchWeather(): Promise<WeatherData | null> {
     if (!res.ok) return null;
     const data = await res.json();
     const current = data.current_condition?.[0];
+    const today = data.weather?.[0];
     if (!current) return null;
 
     const icons: Record<string, string> = {
@@ -417,6 +463,7 @@ export async function fetchWeather(): Promise<WeatherData | null> {
 
     return {
       temp: `${current.temp_C}°C`,
+      high: today?.maxtempC ? `high ${today.maxtempC}°C` : '',
       feelsLike: `feels ${current.FeelsLikeC}°C`,
       desc: current.weatherDesc?.[0]?.value ?? '',
       precip: `${current.precipMM}mm`,

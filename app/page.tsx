@@ -1,25 +1,31 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 type Tab = 'today' | 'workout' | 'portuguese' | 'digest' | 'week';
 
 interface Exercise { name: string; prescription: string }
 interface SessionTask { title: string; minutes: string; details: string[] }
 interface CueCardData { front: string; back: string; tag: string }
+interface StoryData { title: string; englishTitle: string; newVocab: string; rows: { pt: string; en: string }[]; questions: string[] }
+type CardRating = 'again' | 'hard' | 'easy';
+interface CardProgress { rating: CardRating; reviewedAt: string; learned?: boolean }
+type ProgressMap = Record<string, CardProgress>;
+interface WorkoutEntry { completed?: boolean; lifts: Record<string, string> }
+type WorkoutLog = Record<string, WorkoutEntry>;
 
 interface DashboardData {
   date: { iso: string; display: string; weekday: string; weekdayIndex: number; isOfficeDay: boolean };
   reset: { attempt: number; day: number; total: number };
   joey: { weight: string };
-  weather: { temp: string; feelsLike: string; desc: string; precip: string; icon: string } | null;
+  weather: { temp: string; high: string; feelsLike: string; desc: string; precip: string; icon: string } | null;
   workout: { name: string; anchor: string; isRest: boolean; duration: string; template: string[]; exercises: Exercise[]; progression: string[] };
   transit: { show: boolean; toUnion: string[]; toRichmondHill: string[] };
   portuguese: {
     sessionNumber: number | null;
     sessionTitle: string;
     isRest: boolean;
-    stories: string[];
+    stories: StoryData[];
     weekKey: string;
     weekAnchor: string;
     lessonStatus: 'current' | 'fallback' | 'missing';
@@ -54,23 +60,75 @@ function CheckRow({ children }: { children: React.ReactNode }) {
   return <label className="check-row"><input type="checkbox" /> <span>{children}</span></label>;
 }
 
-function CueCard({ card }: { card: CueCardData }) {
+function cardId(card: CueCardData) {
+  return `${card.tag}:${card.front}`;
+}
+
+function CueCard({
+  card,
+  progress,
+  onRate,
+}: {
+  card: CueCardData;
+  progress?: CardProgress;
+  onRate: (card: CueCardData, rating: CardRating) => void;
+}) {
   const [flipped, setFlipped] = useState(false);
+  const status = progress?.rating === 'easy' ? 'Learned' : progress?.rating === 'hard' ? 'Hard' : progress?.rating === 'again' ? 'Again' : 'New';
   return (
-    <button className={`cue-card ${flipped ? 'is-flipped' : ''}`} onClick={() => setFlipped(v => !v)} type="button">
-      <span className="cue-card-inner">
+    <div className={`cue-card ${flipped ? 'is-flipped' : ''}`}>
+      <button className="cue-flip" onClick={() => setFlipped(v => !v)} type="button">
+        <span className="cue-card-inner">
         <span className="cue-face cue-front">
-          <small>{card.tag}</small>
+          <small>{card.tag} · {status}</small>
           <strong>{card.front}</strong>
           <em>Tap to reveal</em>
         </span>
         <span className="cue-face cue-back">
           <small>Answer</small>
           <strong>{card.back}</strong>
-          <em>Tap to hide</em>
+          <em>Rate below</em>
         </span>
-      </span>
-    </button>
+        </span>
+      </button>
+      {flipped && (
+        <div className="rating-row">
+          <button type="button" onClick={() => onRate(card, 'again')}>Again</button>
+          <button type="button" onClick={() => onRate(card, 'hard')}>Hard</button>
+          <button type="button" onClick={() => onRate(card, 'easy')}>Easy</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StoryPanel({ story }: { story: StoryData }) {
+  return (
+    <details className="story-panel">
+      <summary>
+        <span>{story.title}</span>
+        {story.englishTitle && <em>{story.englishTitle}</em>}
+      </summary>
+      {story.newVocab && <p className="story-vocab">New vocab: {story.newVocab}</p>}
+      {story.rows.length > 0 ? (
+        <div className="story-lines">
+          {story.rows.map((row, index) => (
+            <div className="story-line" key={`${story.title}-${index}`}>
+              <strong>{row.pt}</strong>
+              <span>{row.en}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="muted">Full story text will load after the vault is available through GITHUB_PAT.</p>
+      )}
+      {story.questions.length > 0 && (
+        <div className="story-questions">
+          <strong>Self-check</strong>
+          {story.questions.map(question => <span key={question}>{question}</span>)}
+        </div>
+      )}
+    </details>
   );
 }
 
@@ -98,6 +156,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>('today');
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [progress, setProgress] = useState<ProgressMap>({});
+  const [workoutLog, setWorkoutLog] = useState<WorkoutLog>({});
 
   const load = useCallback(async () => {
     try {
@@ -117,6 +177,42 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [load]);
 
+  useEffect(() => {
+    try {
+      setProgress(JSON.parse(localStorage.getItem('pt-card-progress') ?? '{}'));
+      setWorkoutLog(JSON.parse(localStorage.getItem('workout-log') ?? '{}'));
+    } catch {
+      setProgress({});
+      setWorkoutLog({});
+    }
+  }, []);
+
+  const rateCard = useCallback((card: CueCardData, rating: CardRating) => {
+    setProgress(current => {
+      const next = {
+        ...current,
+        [cardId(card)]: {
+          rating,
+          reviewedAt: new Date().toISOString(),
+          learned: rating === 'easy' || current[cardId(card)]?.learned,
+        },
+      };
+      localStorage.setItem('pt-card-progress', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const updateWorkout = useCallback((iso: string, updater: (entry: WorkoutEntry) => WorkoutEntry) => {
+    setWorkoutLog(current => {
+      const next = {
+        ...current,
+        [iso]: updater(current[iso] ?? { lifts: {} }),
+      };
+      localStorage.setItem('workout-log', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   if (loading) {
     return <div className="loading"><div className="spinner" /><p>Loading dashboard...</p></div>;
   }
@@ -127,6 +223,24 @@ export default function Dashboard() {
 
   const { date, reset, joey, weather, workout, transit, portuguese, digest, openItems } = data;
   const overdueCount = (openItems?.overdue.length ?? 0) + (openItems?.p0s.length ?? 0);
+  const todayIso = new Date().toLocaleDateString('en-CA');
+  const vocabCards = portuguese.cueCards.filter(card => card.tag === 'Vocab');
+  const learnedWords = Object.entries(progress).filter(([id, value]) => id.startsWith('Vocab:') && value.learned);
+  const learnedToday = learnedWords.filter(([, value]) => value.reviewedAt.startsWith(todayIso)).length;
+  const hardCards = portuguese.cueCards.filter(card => ['again', 'hard'].includes(progress[cardId(card)]?.rating ?? ''));
+  const newWordCards = vocabCards.filter(card => !progress[cardId(card)]?.learned && !hardCards.some(hard => cardId(hard) === cardId(card))).slice(0, 10);
+  const supportCards = portuguese.cueCards.filter(card => card.tag !== 'Vocab' && !hardCards.some(hard => cardId(hard) === cardId(card)));
+  const reviewCards = useMemo(() => [...hardCards, ...newWordCards, ...supportCards], [hardCards, newWordCards, supportCards]);
+  const todaysWorkout = workoutLog[date.iso] ?? { lifts: {} };
+  const workoutWeek = [
+    ['Mon', 'Push A'],
+    ['Tue', 'Rest'],
+    ['Wed', 'Pull A'],
+    ['Thu', 'Rest'],
+    ['Fri', 'Legs'],
+    ['Sat', 'Push B'],
+    ['Sun', 'Pull B'],
+  ];
   const tabs: { id: Tab; label: string }[] = [
     { id: 'today', label: 'Today' },
     { id: 'workout', label: 'Workout' },
@@ -152,7 +266,7 @@ export default function Dashboard() {
               <span className="weather-icon">{weather.icon}</span>
               <div>
                 <div className="weather-temp">{weather.temp}</div>
-                <div className="weather-feels">{weather.feelsLike}</div>
+                <div className="weather-feels">{weather.feelsLike}{weather.high ? ` · ${weather.high}` : ''}</div>
               </div>
             </div>
           )}
@@ -186,7 +300,7 @@ export default function Dashboard() {
                 <button className="hero-tile" onClick={() => setActiveTab('portuguese')} type="button">
                   <span>Portuguese</span>
                   <strong>{portuguese.sessionTitle}</strong>
-                  <em>{portuguese.cueCards.length} cue cards</em>
+                  <em>{learnedWords.length} words learned</em>
                 </button>
               </div>
             </Card>
@@ -221,26 +335,49 @@ export default function Dashboard() {
               {workout.isRest ? (
                 <p className="muted">Office rest day. No workout decision needed.</p>
               ) : (
-                <div className="exercise-list">
-                  {workout.exercises.map((exercise, index) => (
-                    <div className="exercise-row" key={`${exercise.name}-${index}`}>
-                      <span>{index + 1}</span>
-                      <div><strong>{exercise.name}</strong><em>{exercise.prescription}</em></div>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <label className="complete-row">
+                    <input
+                      type="checkbox"
+                      checked={!!todaysWorkout.completed}
+                      onChange={event => updateWorkout(date.iso, entry => ({ ...entry, completed: event.target.checked }))}
+                    />
+                    <span>{todaysWorkout.completed ? 'Workout completed' : 'Mark workout complete'}</span>
+                  </label>
+                  <div className="exercise-list">
+                    {workout.exercises.map((exercise, index) => (
+                      <div className="exercise-row exercise-track-row" key={`${exercise.name}-${index}`}>
+                        <span>{index + 1}</span>
+                        <div>
+                          <strong>{exercise.name}</strong>
+                          <em>{exercise.prescription}</em>
+                          <input
+                            className="lift-input"
+                            value={todaysWorkout.lifts[exercise.name] ?? ''}
+                            onChange={event => updateWorkout(date.iso, entry => ({
+                              ...entry,
+                              lifts: { ...entry.lifts, [exercise.name]: event.target.value },
+                            }))}
+                            placeholder="e.g. 185 x 6, 185 x 5, 175 x 6"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
             </Card>
             <Card>
-              <SectionLabel eyebrow="Structure" title="Session Template" />
-              <div className="check-list">{workout.template.map(item => <CheckRow key={item}>{item}</CheckRow>)}</div>
+              <SectionLabel eyebrow="Week" title="Workout Calendar" />
+              <div className="workout-calendar">
+                {workoutWeek.map(([day, name], index) => (
+                  <div className={`workout-day ${date.weekdayIndex === ((index + 1) % 7) ? 'active' : ''} ${name === 'Rest' ? 'rest' : ''}`} key={day}>
+                    <span>{day}</span>
+                    <strong>{name}</strong>
+                  </div>
+                ))}
+              </div>
             </Card>
-            {workout.progression.length > 0 && (
-              <Card>
-                <SectionLabel eyebrow="Rule" title="Progression" />
-                <ul className="plain-list">{workout.progression.map(item => <li key={item}>{item}</li>)}</ul>
-              </Card>
-            )}
           </>
         )}
 
@@ -269,19 +406,30 @@ export default function Dashboard() {
             )}
 
             <Card>
-              <SectionLabel eyebrow="Tap" title="Cue Cards" />
+              <SectionLabel eyebrow="Review" title="Cue Cards" />
+              <div className="kpi-grid">
+                <div><span>Total learned</span><strong>{learnedWords.length}</strong></div>
+                <div><span>Today</span><strong>{learnedToday}/10</strong></div>
+                <div><span>Hard queue</span><strong>{hardCards.length}</strong></div>
+              </div>
               {portuguese.cueCards.length > 0 ? (
-                <div className="cue-grid">{portuguese.cueCards.map(card => <CueCard card={card} key={`${card.tag}-${card.front}`} />)}</div>
+                <div className="cue-grid">{reviewCards.map(card => <CueCard card={card} progress={progress[cardId(card)]} onRate={rateCard} key={`${card.tag}-${card.front}`} />)}</div>
               ) : (
                 <p className="muted">No lesson cue cards available yet. Run the weekly prep to create this week's plan.</p>
               )}
             </Card>
 
             <Card>
-              <SectionLabel eyebrow="Daily" title="Anchors + Stories" />
+              <SectionLabel eyebrow="Daily" title="Anchors" />
               <div className="check-list">
                 {portuguese.dailyAnchors.map(anchor => <CheckRow key={anchor}>{anchor}</CheckRow>)}
-                {portuguese.stories.map(story => <CheckRow key={story}>Read aloud · {story}</CheckRow>)}
+              </div>
+            </Card>
+
+            <Card>
+              <SectionLabel eyebrow="Read" title="Weekly Stories" />
+              <div className="story-stack">
+                {portuguese.stories.map(story => <StoryPanel story={story} key={story.title} />)}
               </div>
             </Card>
 
