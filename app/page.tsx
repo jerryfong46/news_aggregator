@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 type Tab = 'today' | 'workout' | 'portuguese' | 'digest' | 'week';
 
@@ -271,11 +271,11 @@ export default function Dashboard() {
   const todayIso = new Date().toLocaleDateString('en-CA');
   const vocabCards = portuguese.cueCards.filter(card => card.tag === 'Vocab');
   const learnedWords = Object.entries(progress).filter(([id, value]) => id.startsWith('Vocab:') && value.learned);
-  const learnedToday = learnedWords.filter(([, value]) => value.reviewedAt.startsWith(todayIso)).length;
+  const learnedToday = learnedWords.filter(([, value]) => value.reviewedAt?.startsWith(todayIso)).length;
   const hardCards = portuguese.cueCards.filter(card => ['again', 'hard'].includes(progress[cardId(card)]?.rating ?? ''));
   const newWordCards = vocabCards.filter(card => !progress[cardId(card)]?.learned && !hardCards.some(hard => cardId(hard) === cardId(card))).slice(0, 10);
   const supportCards = portuguese.cueCards.filter(card => card.tag !== 'Vocab' && !hardCards.some(hard => cardId(hard) === cardId(card)));
-  const reviewCards = useMemo(() => [...hardCards, ...newWordCards, ...supportCards], [hardCards, newWordCards, supportCards]);
+  const reviewCards = [...hardCards, ...newWordCards, ...supportCards];
   const todaysWorkout = workoutLog[date.iso] ?? { lifts: {} };
   const workoutWeek = [
     ['Mon', 'Push A'],
